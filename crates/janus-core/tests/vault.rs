@@ -499,3 +499,119 @@ fn encrypted_export_roundtrip_and_guards() {
         Err(Error::Invalid(_))
     ));
 }
+
+#[test]
+fn bitwarden_import_maps_types_and_keeps_every_field() {
+    use janus_core::ImportFormat;
+    let bytes = include_bytes!("fixtures/bitwarden.json");
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let preview = v
+        .preview_import(ImportFormat::BitwardenJson, bytes)
+        .unwrap();
+    assert_eq!(preview.items.len(), 6);
+    assert!(v.list().unwrap().is_empty(), "preview must not import");
+    assert_eq!(preview.warnings.len(), 2, "{:?}", preview.warnings); // SSH type + bad 2FA key
+    let report = v.import_items(ImportFormat::BitwardenJson, bytes).unwrap();
+    assert_eq!(report.added, 6);
+    let by_title = |t: &str| {
+        let id = v
+            .list()
+            .unwrap()
+            .into_iter()
+            .find(|s| s.title == t)
+            .unwrap()
+            .id;
+        v.get(id).unwrap()
+    };
+    let bank = by_title("Bank");
+    assert!(bank.favorite && bank.folder == "Banking");
+    assert_eq!(bank.history[0].value, "bank-pass-old");
+    match &bank.kind {
+        ItemKind::Login(l) => {
+            assert_eq!(l.urls.len(), 2);
+            assert!(l.notes.contains("main account") && l.notes.contains("Customer ID: C-778"));
+            assert!(l.totp.starts_with("otpauth://"));
+        }
+        _ => panic!(),
+    }
+    assert!(v.totp(bank.id).is_ok());
+    match &by_title("Visa").kind {
+        ItemKind::PaymentCard(c) => {
+            assert_eq!(
+                (c.expiry.as_str(), c.security_code.as_str()),
+                ("08/29", "cvc-123-x")
+            );
+            assert!(c.notes.contains("Brand: Visa"));
+        }
+        _ => panic!(),
+    }
+    match &by_title("Me").kind {
+        ItemKind::Identity(i) => {
+            assert_eq!(
+                (i.document_type.as_str(), i.document_number.as_str()),
+                ("passport", "PX-998877")
+            );
+            assert_eq!(i.full_name, "Adrian K");
+            assert!(i.notes.contains("email: a@example.org") && !i.notes.contains("PX-998877"));
+        }
+        _ => panic!(),
+    }
+    match &by_title("Server key").kind {
+        ItemKind::SecureNote(n) => assert!(n.content.contains("ssh-private-x")),
+        _ => panic!(),
+    }
+    match &by_title("Weird 2FA").kind {
+        ItemKind::Login(l) => assert!(l.totp.is_empty() && l.notes.contains("not-a-key!!")),
+        _ => panic!(),
+    }
+    let encrypted = br#"{"encrypted": true, "items": []}"#;
+    assert!(matches!(
+        v.preview_import(ImportFormat::BitwardenJson, encrypted),
+        Err(Error::Invalid(_))
+    ));
+}
+
+#[test]
+fn browser_csv_import_handles_chrome_and_firefox() {
+    use janus_core::ImportFormat;
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    v.import_items(
+        ImportFormat::BrowserCsv,
+        include_bytes!("fixtures/chrome.csv"),
+    )
+    .unwrap();
+    let preview = v
+        .preview_import(
+            ImportFormat::BrowserCsv,
+            include_bytes!("fixtures/firefox.csv"),
+        )
+        .unwrap();
+    assert!(preview.kept_in_notes >= 4); // Firefox metadata columns are kept, not dropped
+    v.import_items(
+        ImportFormat::BrowserCsv,
+        include_bytes!("fixtures/firefox.csv"),
+    )
+    .unwrap();
+    let titles: Vec<String> = v.list().unwrap().into_iter().map(|s| s.title).collect();
+    assert_eq!(titles, ["example.org", "GitHub", "mail.example"]);
+    let gh = v
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|s| s.title == "GitHub")
+        .unwrap()
+        .id;
+    match v.get(gh).unwrap().kind {
+        ItemKind::Login(l) => {
+            assert_eq!(l.password, "gh,pass \"quoted\"");
+            assert_eq!(l.notes, "personal");
+        }
+        _ => panic!(),
+    }
+    assert!(matches!(
+        v.preview_import(ImportFormat::BrowserCsv, b"a,b\n1,2\n"),
+        Err(Error::Invalid(_))
+    ));
+}

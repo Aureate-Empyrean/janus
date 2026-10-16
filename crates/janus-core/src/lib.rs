@@ -6,6 +6,7 @@
 mod crypto;
 mod export;
 mod generate;
+mod import;
 mod item;
 mod store;
 mod totp;
@@ -13,6 +14,7 @@ mod totp;
 pub use crypto::KdfParams;
 pub use export::{EXPORT_FORMAT, EXPORT_VERSION};
 pub use generate::{generate_password, generated_entropy_bits};
+pub use import::ImportFormat;
 pub use item::{
     ApiSecret, HISTORY_LIMIT, Identity, Item, ItemKind, ItemMeta, ItemSummary, Login, PaymentCard,
     SecretChange, SecureNote, WifiCredential,
@@ -268,6 +270,32 @@ impl<S: VaultStore> Vault<S> {
         Ok(report)
     }
 
+    /// Items another password manager's export would add, for review. Nothing is changed.
+    pub fn preview_import(&self, format: ImportFormat, bytes: &[u8]) -> Result<ImportPreview> {
+        self.open.as_ref().ok_or(Error::Locked)?;
+        let plan = import::parse(format, bytes)?;
+        Ok(ImportPreview {
+            items: plan.items.iter().map(Item::summary).collect(),
+            warnings: plan.warnings,
+            kept_in_notes: plan.kept_in_notes,
+        })
+    }
+
+    /// Adds every item of another password manager's export as new items.
+    pub fn import_items(&mut self, format: ImportFormat, bytes: &[u8]) -> Result<ImportReport> {
+        let plan = import::parse(format, bytes)?;
+        let open = self.open.as_mut().ok_or(Error::Locked)?;
+        let added = plan.items.len();
+        open.contents.items.extend(plan.items);
+        if added > 0 {
+            self.persist()?;
+        }
+        Ok(ImportReport {
+            added,
+            skipped_existing: 0,
+        })
+    }
+
     /// Folder, tags and favorite; the item's secrets are not touched.
     pub fn set_meta(&mut self, id: Uuid, meta: ItemMeta) -> Result<()> {
         let meta = meta.normalized()?;
@@ -315,6 +343,13 @@ impl<S: VaultStore> Vault<S> {
         self.store.save(&open.envelope.to_bytes()?)?;
         Ok(())
     }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ImportPreview {
+    pub items: Vec<ItemSummary>,
+    pub warnings: Vec<String>,
+    pub kept_in_notes: usize,
 }
 
 #[derive(Debug, Default, Serialize)]

@@ -1,0 +1,2 @@
+url,username,password,httpRealm,formActionOrigin,guid,timeCreated,timeLastUsed,timePasswordChanged
+https://mail.example,me,mail-pass,,https://mail.example,{abc},1700000000000,1700000000001,1700000000002
