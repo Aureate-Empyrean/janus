@@ -230,10 +230,10 @@ fn every_item_type_roundtrips_and_summaries_stay_non_secret() {
         .add(ItemKind::PaymentCard(PaymentCard {
             title: "Visa".into(),
             cardholder: "A K".into(),
-            number: "4111 1111 1111 1234".into(),
+            number: "4111 1111 1111 1111".into(),
             expiry: "08/29".into(),
-            security_code: "cvc-987-x".into(),
-            pin: "pin-4321-x".into(),
+            security_code: "987".into(),
+            pin: "4321".into(),
             notes: String::new(),
         }))
         .unwrap();
@@ -268,16 +268,21 @@ fn every_item_type_roundtrips_and_summaries_stay_non_secret() {
     v.lock();
     v.unlock(PASSWORD).unwrap();
     let summaries = v.list().unwrap();
-    let json = serde_json::to_string(&summaries).unwrap();
+    // Overview text never shows secrets (IDs and timestamps are random, so only the
+    // human-readable fields are checked).
+    let visible: String = summaries
+        .iter()
+        .map(|s| format!("{} {}\n", s.title, s.subtitle))
+        .collect();
     for secret in [
         "4111 1111",
-        "cvc-987-x",
-        "pin-4321-x",
+        "987",
+        "4321",
         "X1234567",
         "wifi-secret-pass",
         "ghp_secretvalue",
     ] {
-        assert!(!json.contains(secret), "{secret} in overview");
+        assert!(!visible.contains(secret), "{secret} in overview");
     }
     let sub = |t: &str| {
         summaries
@@ -287,21 +292,18 @@ fn every_item_type_roundtrips_and_summaries_stay_non_secret() {
             .subtitle
             .clone()
     };
-    assert_eq!(sub("Visa"), "•••• 1234");
+    assert_eq!(sub("Visa"), "•••• 1111");
     assert_eq!(sub("Passport"), "Passport");
     assert_eq!(sub("Home"), "Exodus");
     assert_eq!(sub("GitHub token"), "GitHub");
     match v.get(card).unwrap().kind {
         ItemKind::PaymentCard(c) => {
-            assert_eq!(
-                (c.security_code.as_str(), c.pin.as_str()),
-                ("cvc-987-x", "pin-4321-x")
-            )
+            assert_eq!((c.security_code.as_str(), c.pin.as_str()), ("987", "4321"))
         }
         _ => panic!("wrong kind"),
     }
     let wifi: ItemKind = serde_json::from_value(serde_json::json!({
-        "type": "wifi", "title": "T", "ssid": "S", "password": "p", "security": "WPA2", "notes": ""
+        "type": "wifi", "title": "T", "ssid": "S", "password": "pass-phrase-1", "security": "WPA2", "notes": ""
     }))
     .unwrap();
     v.add(wifi).unwrap();
@@ -321,7 +323,7 @@ fn login_authenticator_codes_and_validation() {
             totp: key.into(),
         }))
     };
-    assert!(matches!(with_key("not a key!"), Err(Error::Invalid(_))));
+    assert!(matches!(with_key("not a key!"), Err(Error::Fields(_))));
     let id = with_key("GEZD GNBV GY3T QOJQ GEZD GNBV GY3T QOJQ").unwrap();
     let code = v.totp(id).unwrap();
     assert_eq!(code.code.len(), 6);
@@ -540,7 +542,7 @@ fn bitwarden_import_maps_types_and_keeps_every_field() {
         ItemKind::PaymentCard(c) => {
             assert_eq!(
                 (c.expiry.as_str(), c.security_code.as_str()),
-                ("08/29", "cvc-123-x")
+                ("08/29", "123")
             );
             assert!(c.notes.contains("Brand: Visa"));
         }
@@ -614,4 +616,120 @@ fn browser_csv_import_handles_chrome_and_firefox() {
         v.preview_import(ImportFormat::BrowserCsv, b"a,b\n1,2\n"),
         Err(Error::Invalid(_))
     ));
+}
+
+#[test]
+fn field_rules_normalize_and_reject_with_per_field_messages() {
+    use janus_core::{FieldError, ItemMeta, PaymentCard, WifiCredential};
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let card = |number: &str, expiry: &str, code: &str, pin: &str| {
+        ItemKind::PaymentCard(PaymentCard {
+            title: "Card".into(),
+            cardholder: String::new(),
+            number: number.into(),
+            expiry: expiry.into(),
+            security_code: code.into(),
+            pin: pin.into(),
+            notes: String::new(),
+        })
+    };
+    let fields = |result: Result<uuid::Uuid, Error>| match result {
+        Err(Error::Fields(errors)) => errors
+            .into_iter()
+            .map(|e: FieldError| e.field)
+            .collect::<Vec<_>>(),
+        other => panic!("expected field errors, got {:?}", other.map(|_| ())),
+    };
+    let meta = ItemMeta::default;
+    assert_eq!(
+        fields(v.save(
+            None,
+            card("4111 1111 1111 1111 9999", "13/29", "12345", "12"),
+            meta()
+        )),
+        ["number", "expiry", "security_code", "pin"]
+    );
+    assert_eq!(
+        fields(v.save(None, card("4111 1111 1111 1112", "", "", ""), meta())),
+        ["number"]
+    );
+    assert_eq!(
+        fields(v.save(None, card("4111-1111-1111-111a", "", "", ""), meta())),
+        ["number"]
+    );
+    // Separators and long years are normalized.
+    let id = v
+        .save(
+            None,
+            card("4111-1111 1111-1111", "8/2029", "987", "4321"),
+            meta(),
+        )
+        .unwrap();
+    match v.get(id).unwrap().kind {
+        ItemKind::PaymentCard(c) => assert_eq!(
+            (c.number.as_str(), c.expiry.as_str()),
+            ("4111111111111111", "08/29")
+        ),
+        _ => panic!(),
+    }
+    let wifi = |ssid: &str, password: &str, security: &str| {
+        ItemKind::Wifi(WifiCredential {
+            title: "Net".into(),
+            ssid: ssid.into(),
+            password: password.into(),
+            security: security.into(),
+            notes: String::new(),
+        })
+    };
+    assert_eq!(
+        fields(v.save(None, wifi("Home", "short", "WPA2"), meta())),
+        ["password"]
+    );
+    assert_eq!(
+        fields(v.save(None, wifi(&"x".repeat(33), "long enough", "WPA3"), meta())),
+        ["ssid"]
+    );
+    assert_eq!(
+        fields(v.save(None, wifi("Cafe", "secret", "open"), meta())),
+        ["password"]
+    );
+    assert!(
+        v.save(None, wifi("Old", "abcde", "WEP"), meta()).is_ok(),
+        "5-character WEP keys are valid"
+    );
+    assert_eq!(fields(v.save(None, login("", "x"), meta())), ["title"]);
+}
+
+#[test]
+fn imports_keep_rule_breaking_values_in_notes() {
+    use janus_core::ImportFormat;
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let export = br#"{"encrypted": false, "items": [
+        {"type": 3, "name": "Old card", "card": {"number": "1234 5678", "code": "12345", "expMonth": "8", "expYear": "2029"}},
+        {"type": 1, "name": "", "login": {"username": "u", "password": "p"}}
+    ]}"#;
+    let preview = v
+        .preview_import(ImportFormat::BitwardenJson, export)
+        .unwrap();
+    assert_eq!(preview.warnings.len(), 2, "{:?}", preview.warnings);
+    v.import_items(ImportFormat::BitwardenJson, export).unwrap();
+    let titles: Vec<String> = v.list().unwrap().into_iter().map(|s| s.title).collect();
+    assert_eq!(titles, ["Imported item", "Old card"]);
+    let card = v
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|s| s.title == "Old card")
+        .unwrap()
+        .id;
+    match v.get(card).unwrap().kind {
+        ItemKind::PaymentCard(c) => {
+            assert!(c.number.is_empty() && c.security_code.is_empty());
+            assert_eq!(c.expiry, "08/29");
+            assert!(c.notes.contains("12345678") && c.notes.contains("12345"));
+        }
+        _ => panic!(),
+    }
 }

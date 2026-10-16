@@ -84,12 +84,19 @@ pub enum ItemKind {
 
 impl ItemKind {
     pub(crate) fn validate(&self) -> Result<()> {
-        if let ItemKind::Login(login) = self
-            && !login.totp.trim().is_empty()
-        {
-            crate::Totp::parse(&login.totp)?;
+        let errors = self.check();
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::Fields(errors))
         }
-        Ok(())
+    }
+
+    /// Normalized and validated, ready to store.
+    pub(crate) fn prepared(mut self) -> Result<Self> {
+        self.normalize();
+        self.validate()?;
+        Ok(self)
     }
 
     /// Fields whose previous values are kept in history when they change.
@@ -101,6 +108,10 @@ impl ItemKind {
             ItemKind::PaymentCard(i) => vec![("pin", &i.pin)],
             ItemKind::SecureNote(_) | ItemKind::Identity(_) => vec![],
         }
+    }
+
+    pub(crate) fn summary_title(&self) -> &str {
+        self.title()
     }
 
     fn title(&self) -> &str {

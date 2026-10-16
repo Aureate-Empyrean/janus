@@ -561,6 +561,24 @@ textarea {
   color: var(--warn);
 }
 
+.field > .field-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+.field > .field-error {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--danger);
+}
+.field > .field-error:empty,
+.field > .field-hint:has(+ .field-error:not(:empty)) {
+  display: none;
+}
+.field:has(.field-error:not(:empty)) :is(input, select, textarea) {
+  border-color: var(--danger);
+}
+
 #toast {
   position: fixed;
   bottom: 20px;

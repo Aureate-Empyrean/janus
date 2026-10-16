@@ -2,8 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use janus_core::{
-    FileStore, ImportFormat, ImportPreview, ImportReport, Item, ItemKind, ItemMeta, ItemSummary,
-    TotpCode, Vault,
+    FieldError, FileStore, ImportFormat, ImportPreview, ImportReport, Item, ItemKind, ItemMeta,
+    ItemSummary, TotpCode, Vault,
 };
 use serde::Serialize;
 use std::io::Write;
@@ -140,6 +140,13 @@ fn import_items(
     with(&state, |v| v.import_items(format, &bytes))
 }
 
+/// Field rule violations for an unsaved item, so the form can mark each field.
+#[tauri::command]
+fn check_item(mut item: ItemKind) -> Vec<FieldError> {
+    item.normalize();
+    item.check()
+}
+
 #[tauri::command]
 fn delete(state: State<AppVault>, id: Uuid) -> Reply<()> {
     with(&state, |v| v.delete(id))
@@ -182,6 +189,7 @@ fn main() {
             get,
             save,
             delete,
+            check_item,
             export_vault,
             preview_export,
             import_export,

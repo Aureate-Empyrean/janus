@@ -62,6 +62,19 @@ Scope: development-only standalone vault on Windows. Not production-safe.
       never dropped. Encrypted Bitwarden exports are refused with instructions.
 - [x] The interface warns that the source file is plaintext and asks the user to delete it.
 
+## Field rules — 2026-10-16
+
+- [x] One rule set in the core (`rules.rs`), used by saving, by the form (`check_item`)
+      and by imports. Cards: 12–19 digits with Luhn check, MM/YY expiry, 3–4 digit security
+      code, 4–12 digit PIN. Wi-Fi: SSID ≤ 32 bytes, WPA 8–63 characters or 64 hex, WEP
+      5/13 characters or 10/26 hex, open means no password. Identity: real dates, expiry
+      not before issue, bounded document numbers. Every text field has a length limit and
+      every item needs a title.
+- [x] The form limits typing (digits only, grouping, auto MM/YY) and shows the core's
+      message under each field.
+- [x] Imports never fail on a rule: a breaking value moves into the item's notes, with a
+      warning in the preview.
+
 ## Next candidates (V1 per architecture)
 
 KeePass and 1Password imports; browser autofill (early follow-up).

@@ -70,17 +70,12 @@ impl Builder {
         meta: ItemMeta,
         history: Vec<SecretChange>,
     ) -> Result<()> {
-        // An unusable authenticator key must not block the rest of the item: keep it in notes.
-        if let ItemKind::Login(login) = &mut kind
-            && !login.totp.trim().is_empty()
-            && crate::Totp::parse(&login.totp).is_err()
-        {
-            self.plan.warnings.push(format!(
-                "\"{}\": authenticator key not recognised; kept in the notes",
-                login.title
-            ));
-            let key = std::mem::take(&mut login.totp);
-            login.notes = self.notes(&login.notes, &[("Authenticator key".into(), key)]);
+        let title = kind.summary_title().to_owned();
+        for moved in kind.sanitize() {
+            self.plan
+                .warnings
+                .push(format!("\"{title}\": {moved}; value kept in the notes"));
+            self.plan.kept_in_notes += 1;
         }
         kind.validate()?;
         let mut item = Item::new(kind);

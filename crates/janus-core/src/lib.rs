@@ -8,6 +8,7 @@ mod export;
 mod generate;
 mod import;
 mod item;
+mod rules;
 mod store;
 mod totp;
 
@@ -19,6 +20,7 @@ pub use item::{
     ApiSecret, HISTORY_LIMIT, Identity, Item, ItemKind, ItemMeta, ItemSummary, Login, PaymentCard,
     SecretChange, SecureNote, WifiCredential,
 };
+pub use rules::FieldError;
 pub use store::{FileStore, MemoryStore, VaultStore};
 pub use totp::{Algorithm as TotpAlgorithm, Totp, TotpCode};
 
@@ -46,6 +48,8 @@ pub enum Error {
     Format(String),
     #[error("{0}")]
     Invalid(String),
+    #[error("Check {}", .0.iter().map(|e| format!("{}: {}", e.field, e.message)).collect::<Vec<_>>().join("; "))]
+    Fields(Vec<FieldError>),
     #[error("Item not found")]
     ItemNotFound,
     #[error("Item kind cannot be changed")]
@@ -179,7 +183,7 @@ impl<S: VaultStore> Vault<S> {
     }
 
     pub fn add(&mut self, kind: ItemKind) -> Result<Uuid> {
-        kind.validate()?;
+        let kind = kind.prepared()?;
         let open = self.open.as_mut().ok_or(Error::Locked)?;
         let item = Item::new(kind);
         let id = item.id;
@@ -189,7 +193,7 @@ impl<S: VaultStore> Vault<S> {
     }
 
     pub fn update(&mut self, id: Uuid, kind: ItemKind) -> Result<()> {
-        kind.validate()?;
+        let kind = kind.prepared()?;
         let open = self.open.as_mut().ok_or(Error::Locked)?;
         let item = open
             .contents
@@ -204,7 +208,7 @@ impl<S: VaultStore> Vault<S> {
     /// Creates (`id` = None) or updates an item together with its metadata, in one write.
     /// Nothing is stored unless both are valid.
     pub fn save(&mut self, id: Option<Uuid>, kind: ItemKind, meta: ItemMeta) -> Result<Uuid> {
-        kind.validate()?;
+        let kind = kind.prepared()?;
         let meta = meta.normalized()?;
         let open = self.open.as_mut().ok_or(Error::Locked)?;
         let id = match id {
@@ -255,7 +259,8 @@ impl<S: VaultStore> Vault<S> {
         let items = export::open_export(bytes, export_password)?;
         let open = self.open.as_mut().ok_or(Error::Locked)?;
         let mut report = ImportReport::default();
-        for item in items {
+        for mut item in items {
+            report.moved_to_notes += item.kind.sanitize().len();
             item.kind.validate()?;
             if open.contents.items.iter().any(|i| i.id == item.id) {
                 report.skipped_existing += 1;
@@ -292,7 +297,7 @@ impl<S: VaultStore> Vault<S> {
         }
         Ok(ImportReport {
             added,
-            skipped_existing: 0,
+            ..Default::default()
         })
     }
 
@@ -356,6 +361,8 @@ pub struct ImportPreview {
 pub struct ImportReport {
     pub added: usize,
     pub skipped_existing: usize,
+    /// Values that broke a field rule and were kept in the item's notes instead.
+    pub moved_to_notes: usize,
 }
 
 fn check_password(password: &str) -> Result<()> {
