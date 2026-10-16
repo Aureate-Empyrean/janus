@@ -21,7 +21,14 @@ Scope: development-only standalone vault on Windows. Not production-safe.
 - [ ] Security review of the draft design (reviewer and process are the owner's decision).
 - [ ] Release signing (Authenticode / release key) and a published release.
 
+## Item types — 2026-10-16
+
+- [x] Payment Card, Identity document (passport, national ID, driving licence, other),
+      Wi-Fi and API secret items alongside Login and Secure Note. Overview subtitles never
+      contain secrets (cards show only the last four digits).
+- [x] Interface driven by one field schema per type; "New" from All items asks for a type.
+
 ## Next candidates (V1 per architecture)
 
-Payment Card, Identity, Wi-Fi and API secret items; TOTP; folders/tags/favorites; item
+TOTP; folders/tags/favorites; item
 history; encrypted export; import from common formats. Then browser autofill.

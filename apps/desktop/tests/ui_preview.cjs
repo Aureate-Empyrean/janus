@@ -21,7 +21,11 @@ const server = http.createServer((req, res) => {
 const mock = () => {
   const vault = { exists: false, unlocked: false, password: null, items: [] };
   let n = 0;
-  const summary = (i) => ({ id: i.id, type: i.type, title: i.title, subtitle: i.type === "login" ? i.username : "", updated_at: i.updated_at });
+  const subtitle = (i) => {
+    const digits = (i.number || "").replace(/\D/g, "");
+    return { login: i.username, wifi: i.ssid, api_secret: i.service, payment_card: digits.length >= 8 ? "•••• " + digits.slice(-4) : "" }[i.type] ?? "";
+  };
+  const summary = (i) => ({ id: i.id, type: i.type, title: i.title, subtitle: subtitle(i), updated_at: i.updated_at });
   window.__calls = [];
   window.__TAURI__ = {
     core: {
@@ -75,10 +79,12 @@ const mock = () => {
     await expect(page.getByText("Your vault is empty.")).toBeVisible();
 
     await page.click("text=New");
+    await expect(page.getByRole("heading", { name: "What do you want to add?" })).toBeVisible();
+    await page.click(".type-card >> text=Login");
     await page.fill('input[name="title"]', "Example Mail");
     await page.fill('input[name="username"]', "adrian@example.org");
     await page.click("text=Generate");
-    await page.fill('input[name="url"]', "https://mail.example.org");
+    await page.fill('input[name="urls"]', "https://mail.example.org");
     await page.screenshot({ path: `${out}/janus-02-new-login.png` });
     await page.click("text=Add to vault");
     await expect(page.getByRole("heading", { name: "Example Mail" })).toBeVisible();
@@ -92,8 +98,29 @@ const mock = () => {
     await page.fill('input[name="title"]', "Recovery codes");
     await page.fill('textarea[name="content"]', "1111-2222\n3333-4444");
     await page.click("text=Add to vault");
+    // A payment card: secrets masked, overview shows only the last four digits.
+    await page.click(".nav-item >> text=Payment cards");
+    await page.click("text=New");
+    await page.fill('input[name="title"]', "Visa");
+    await page.fill('input[name="number"]', "4111 1111 1111 1234");
+    await page.fill('input[name="security_code"]', "987");
+    await page.click("text=Add to vault");
+    await expect(page.locator(".item-row .sub")).toHaveText("•••• 1234");
+    await expect(page.locator(".kv")).not.toContainText("4111");
+    await page.click('[aria-label="Reveal Card number"]');
+    await expect(page.locator(".kv")).toContainText("4111 1111 1111 1234");
+    await page.screenshot({ path: `${out}/janus-04b-card.png` });
+    // An identity document uses its own fields, including a document-type select.
+    await page.click(".nav-item >> text=Identity documents");
+    await page.click("text=New");
+    await page.fill('input[name="title"]', "Passport");
+    await page.selectOption('select[name="document_type"]', "passport");
+    await page.fill('input[name="document_number"]', "X1234567");
+    await page.fill('input[name="expires_on"]', "2031-01-01");
+    await page.click("text=Add to vault");
+    await expect(page.locator(".kv")).toContainText("Passport");
     await page.click(".nav-item >> text=All items");
-    await expect(page.locator(".item-row")).toHaveCount(2);
+    await expect(page.locator(".item-row")).toHaveCount(4);
     const search = page.locator('input[type="search"]');
     await search.pressSequentially("mail");
     await expect(search).toHaveValue("mail");
@@ -103,6 +130,7 @@ const mock = () => {
 
     // Searching or filtering while editing keeps the unsaved form.
     await page.click("text=New");
+    await page.click(".type-card >> text=Wi-Fi");
     await page.fill('input[name="title"]', "Unsaved draft");
     await search.fill("");
     await search.pressSequentially("rec");
@@ -120,14 +148,14 @@ const mock = () => {
     await page.screenshot({ path: `${out}/janus-05-unlock-error.png` });
     await page.fill("#pw", "correct horse battery staple");
     await page.click("button:has-text('Unlock')");
-    await expect(page.locator(".item-row")).toHaveCount(2);
+    await expect(page.locator(".item-row")).toHaveCount(4);
 
     const font = await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('14px "Roboto"'); });
     if (!font) errors.push("Bundled Roboto did not load");
     const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
     if (accent !== "#4fb8b0") errors.push("Teal accent missing: " + accent);
     if (errors.length) throw Error(errors.join(" | "));
-    console.log("PASS: create (weak password refused), login with generator, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
+    console.log("PASS: create (weak password refused), type chooser, login with generator, payment card (last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
   } catch (e) {
     console.error("FAIL:", e.message, errors);
     await browser.contexts()[0]?.pages()[0]?.screenshot({ path: `${out}/janus-failure.png` }).catch(() => {});
