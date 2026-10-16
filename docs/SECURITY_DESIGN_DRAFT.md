@@ -43,6 +43,9 @@ updates (until release signing exists), multi-device sync.
 - **Storage**: one JSON envelope file, written to a temporary file, flushed and renamed.
 - **One-time codes**: TOTP keys are vault contents like passwords; codes are computed
   in the core (RustCrypto `hmac`/`sha1`/`sha2`) and the key is zeroized after use.
+- **Export**: same construction with a fresh key under a separate export password and
+  fresh salt; the header's exact bytes are the associated data ([EXPORT_FORMAT.md](EXPORT_FORMAT.md)).
+  Exporting requires the master password again.
 - **Password generator**: unbiased rejection sampling from the CSPRNG, look-alike
   characters removed; entropy is reported from the generation process.
 

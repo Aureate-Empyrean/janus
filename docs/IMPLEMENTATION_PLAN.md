@@ -44,6 +44,15 @@ Scope: development-only standalone vault on Windows. Not production-safe.
       20) under "Previous values", masked like other secrets and never in the overview.
 - [x] Saving an item and its metadata is one validated write.
 
+## Encrypted export — 2026-10-16
+
+- [x] Export of all items to Downloads under a separate export password, after re-entering
+      the master password. No plaintext export exists.
+- [x] Format `janus-export` v1 documented in `EXPORT_FORMAT.md`; CI decrypts a fresh export
+      with the independent `tools/decrypt_export.py` (argon2-cffi + PyNaCl).
+- [x] Import of Janus exports with a preview; identities are kept and items already present
+      are left unchanged.
+
 ## Next candidates (V1 per architecture)
  folders/tags/favorites; item
 history; encrypted export; import from common formats. Then browser autofill.

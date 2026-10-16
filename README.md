@@ -16,6 +16,8 @@ Licensed AGPL-3.0-or-later.
 - `apps/desktop`: Tauri 2 desktop client. Plain HTML/CSS/JS interface using the shared
   Aureate tokens with Janus teal. Strict content security policy, no remote content, no
   shell/filesystem/HTTP/updater plugins, no automatic updates.
+- Encrypted export in a documented format ([EXPORT_FORMAT.md](docs/EXPORT_FORMAT.md)) that
+  `tools/decrypt_export.py` can read without Janus.
 
 Janus is not served or updated by Nexus. It works with no Nexus at all; synchronization is
 later work.

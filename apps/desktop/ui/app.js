@@ -17,7 +17,12 @@ function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
     if (value === undefined || value === null || value === false) continue;
-    if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
+    if (key.startsWith("on"))
+      el.addEventListener(key.slice(2), (event) => {
+        // Async handlers: errors from call() are already on screen; show anything else.
+        const result = value(event);
+        result?.catch?.((error) => error?.shown || toast(String(error?.message ?? error)));
+      });
     else if (key === "class") el.className = value;
     else if (key === "text") el.textContent = value;
     else el.setAttribute(key, value === true ? "" : value);
@@ -49,7 +54,7 @@ async function call(cmd, args, errorEl) {
     if (errorEl) errorEl.textContent = message;
     else toast(message);
     if (message.includes("locked")) await boot();
-    throw error;
+    throw Object.assign(new Error(message), { shown: true });
   }
 }
 
@@ -354,6 +359,7 @@ function render() {
         folders().length ? h("p", { class: "nav-heading", text: "Folders" }) : null,
         folders().map((name) => nav("folder:" + name, name)),
         h("div", { class: "spacer" }),
+        h("button", { class: "nav-item", type: "button", onclick: transfer }, h("span", { class: "label", text: "Export & import" })),
         h("button", { class: "nav-item", type: "button", onclick: passwordChange }, h("span", { class: "label", text: "Master password" })),
         h("button", { class: "nav-item", type: "button", onclick: () => lockNow() }, h("span", { class: "label", text: "Lock" })),
       ),
@@ -719,6 +725,105 @@ async function remove(item) {
     ),
   );
   detail.querySelector(".detail-inner")?.append(confirmBox);
+}
+
+// Encrypted export to Downloads and import of Janus exports, with a preview first.
+function transfer() {
+  state.mode = "edit";
+  render();
+  const exportError = h("p", { class: "error", role: "alert" });
+  const saved = h("p", { class: "hint" });
+  const exportForm = h(
+    "form",
+    {
+      onsubmit: async (event) => {
+        event.preventDefault();
+        const next = document.getElementById("exp1").value;
+        if (next !== document.getElementById("exp2").value) {
+          exportError.textContent = "The export passwords do not match";
+          return;
+        }
+        const path = await call("export_vault", { master: document.getElementById("exp-master").value, exportPassword: next }, exportError);
+        saved.textContent = `Saved to ${path}`;
+        exportForm.reset();
+      },
+    },
+    passwordField("Master password", "exp-master", "current-password"),
+    h(
+      "div",
+      { class: "field-pair" },
+      passwordField("Export password", "exp1", "new-password"),
+      passwordField("Repeat export password", "exp2", "new-password"),
+    ),
+    h("p", { class: "hint", text: "The export is encrypted with this password, not your master password. Without it the file cannot be opened. Janus never writes a plaintext export." }),
+    exportError,
+    saved,
+    h("div", { class: "form-actions" }, h("button", { class: "btn primary", type: "submit", text: "Export to Downloads" })),
+  );
+
+  const importError = h("p", { class: "error", role: "alert" });
+  const preview = h("div", { class: "import-preview" });
+  let pending = null;
+  const importForm = h(
+    "form",
+    {
+      onsubmit: async (event) => {
+        event.preventDefault();
+        const file = document.getElementById("imp-file").files[0];
+        if (!file) {
+          importError.textContent = "Choose an export file first";
+          return;
+        }
+        const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+        const password = document.getElementById("imp-pw").value;
+        const items = await call("preview_export", { bytes, password }, importError);
+        pending = { bytes, password };
+        const known = new Set(state.items.map((i) => i.id));
+        const fresh = items.filter((i) => !known.has(i.id));
+        preview.replaceChildren(
+          h("p", { text: `${items.length} items in this export, ${fresh.length} new. Items already in this vault are left unchanged.` }),
+          h("div", { class: "kv" }, items.slice(0, 50).map((i) => h("div", { class: "kv-row" }, h("span", { class: "k", text: TYPES[i.type]?.label ?? i.type }), h("span", { class: "v", text: i.title || "Untitled" }), h("span", { class: "actions", text: known.has(i.id) ? "already here" : "" })))),
+          items.length > 50 ? h("p", { class: "hint", text: `and ${items.length - 50} more` }) : null,
+          h(
+            "div",
+            { class: "form-actions" },
+            h("button", {
+              class: "btn primary",
+              type: "button",
+              text: `Import ${fresh.length} items`,
+              disabled: !fresh.length,
+              onclick: async () => {
+                const report = await call("import_export", pending, importError);
+                pending = null;
+                preview.replaceChildren();
+                importForm.reset();
+                toast(`Imported ${report.added} items${report.skipped_existing ? `, ${report.skipped_existing} already present` : ""}`);
+                state.items = await call("list");
+                renderList();
+              },
+            }),
+          ),
+        );
+      },
+    },
+    h("label", { class: "field" }, h("span", { text: "Janus export file" }), h("input", { id: "imp-file", type: "file", accept: ".janus-export" })),
+    passwordField("Export password", "imp-pw", "off"),
+    importError,
+    h("div", { class: "form-actions" }, h("button", { class: "btn", type: "submit", text: "Preview import" })),
+  );
+
+  document.getElementById("detail").replaceChildren(
+    h(
+      "div",
+      { class: "detail-inner" },
+      h("header", { class: "detail-head" }, h("h2", { text: "Export & import" })),
+      h("h3", { class: "section-title", text: "Encrypted export" }),
+      exportForm,
+      h("h3", { class: "section-title", text: "Import a Janus export" }),
+      importForm,
+      preview,
+    ),
+  );
 }
 
 function passwordChange() {
