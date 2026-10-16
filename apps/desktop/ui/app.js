@@ -196,16 +196,16 @@ const WIFI_SECURITY = [
   ["open", "Open"],
   ["other", "Other"],
 ];
-const NOTES = { name: "notes", label: "Notes", multiline: true };
+const NOTES = { name: "notes", label: "Notes", multiline: true, max: 10000 };
 const TYPES = {
   login: {
     label: "Login",
     plural: "Logins",
     fields: [
-      { name: "username", label: "Username", copy: true },
-      { name: "password", label: "Password", secret: true, copy: true, generate: true },
-      { name: "urls", label: "Website", copy: true, list: true, input: { type: "url", placeholder: "https://" } },
-      { name: "totp", label: "Authenticator key", secret: true, input: { placeholder: "Base32 key or otpauth:// link" } },
+      { name: "username", label: "Username", copy: true, max: 256 },
+      { name: "password", label: "Password", secret: true, copy: true, generate: true, max: 1024 },
+      { name: "urls", label: "Website", copy: true, list: true, max: 2048, input: { type: "url", placeholder: "https://" } },
+      { name: "totp", label: "Authenticator key", secret: true, max: 2048, input: { placeholder: "Base32 key or otpauth:// link" } },
       NOTES,
     ],
   },
@@ -213,11 +213,11 @@ const TYPES = {
     label: "Payment card",
     plural: "Payment cards",
     fields: [
-      { name: "cardholder", label: "Cardholder", copy: true },
-      { name: "number", label: "Card number", secret: true, copy: true, input: { inputmode: "numeric" } },
-      { name: "expiry", label: "Expires", copy: true, input: { placeholder: "MM/YY" } },
-      { name: "security_code", label: "Security code", secret: true, copy: true, input: { inputmode: "numeric" } },
-      { name: "pin", label: "PIN", secret: true, copy: true, input: { inputmode: "numeric" } },
+      { name: "cardholder", label: "Cardholder", copy: true, max: 100 },
+      { name: "number", label: "Card number", secret: true, copy: true, format: "card", hint: "12 to 19 digits" },
+      { name: "expiry", label: "Expires", copy: true, format: "expiry", hint: "MM/YY", input: { placeholder: "MM/YY" } },
+      { name: "security_code", label: "Security code", secret: true, copy: true, digits: 4, hint: "3 or 4 digits" },
+      { name: "pin", label: "PIN", secret: true, copy: true, digits: 12, hint: "4 to 12 digits" },
       NOTES,
     ],
   },
@@ -226,10 +226,10 @@ const TYPES = {
     plural: "Identity documents",
     fields: [
       { name: "document_type", label: "Document", options: DOCUMENT_TYPES },
-      { name: "full_name", label: "Full name", copy: true },
-      { name: "document_number", label: "Number", secret: true, copy: true },
-      { name: "issuing_authority", label: "Issued by" },
-      { name: "country", label: "Country" },
+      { name: "full_name", label: "Full name", copy: true, max: 200 },
+      { name: "document_number", label: "Number", secret: true, copy: true, max: 40, format: "upper" },
+      { name: "issuing_authority", label: "Issued by", max: 200 },
+      { name: "country", label: "Country", max: 60 },
       { name: "issued_on", label: "Issued", input: { type: "date" } },
       { name: "expires_on", label: "Expires", input: { type: "date" } },
       NOTES,
@@ -239,8 +239,8 @@ const TYPES = {
     label: "Wi-Fi",
     plural: "Wi-Fi",
     fields: [
-      { name: "ssid", label: "Network name", copy: true },
-      { name: "password", label: "Password", secret: true, copy: true, generate: true },
+      { name: "ssid", label: "Network name", copy: true, max: 32 },
+      { name: "password", label: "Password", secret: true, copy: true, generate: true, max: 64, hint: "WPA: 8 to 63 characters. WEP: 5 or 13." },
       { name: "security", label: "Security", options: WIFI_SECURITY },
       NOTES,
     ],
@@ -249,16 +249,16 @@ const TYPES = {
     label: "API secret",
     plural: "API secrets",
     fields: [
-      { name: "service", label: "Service" },
-      { name: "key_id", label: "Key or client ID", copy: true },
-      { name: "secret", label: "Secret", secret: true, copy: true },
+      { name: "service", label: "Service", max: 100 },
+      { name: "key_id", label: "Key or client ID", copy: true, max: 200 },
+      { name: "secret", label: "Secret", secret: true, copy: true, max: 8192 },
       NOTES,
     ],
   },
   secure_note: {
     label: "Secure note",
     plural: "Secure notes",
-    fields: [{ name: "content", label: "Note", multiline: true, secret: true, copy: true }],
+    fields: [{ name: "content", label: "Note", multiline: true, secret: true, copy: true, max: 100000 }],
   },
 };
 
@@ -429,7 +429,7 @@ async function showItem(id) {
   const rows = [];
   const row = (field, value) => {
     if (!value) return;
-    const shown = optionLabel(field, value);
+    const shown = field.format === "card" ? groupCard(value) : optionLabel(field, value);
     const v = h("span", { class: "v" + (field.secret ? " mono" : ""), text: field.secret ? "••••••••••••" : shown });
     const actions = h("span", { class: "actions" });
     if (field.secret) {
@@ -442,7 +442,7 @@ async function showItem(id) {
           "aria-label": `Reveal ${field.label}`,
           onclick: (event) => {
             visible = !visible;
-            v.textContent = visible ? value : "••••••••••••";
+            v.textContent = visible ? shown : "••••••••••••";
             event.target.textContent = visible ? "Hide" : "Reveal";
           },
         }),
@@ -564,8 +564,37 @@ function historySection(item) {
   );
 }
 
+function groupCard(value) {
+  return value.replace(/\D/g, "").replace(/(\d{4})(?=\d)/g, "$1 ");
+}
+
+// Typing aids only; the core's rules decide what is valid (see check_item).
+function constrain(field, el) {
+  const digits = (v, max) => v.replace(/\D/g, "").slice(0, max);
+  const fix = {
+    card: (v) => groupCard(digits(v, 19)),
+    expiry: (v) => {
+      const d = digits(v, 4);
+      return d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+    },
+    upper: (v) => v.toUpperCase(),
+  }[field.format];
+  const apply = fix ?? (field.digits ? (v) => digits(v, field.digits) : null);
+  if (!apply) return;
+  el.addEventListener("input", () => {
+    const next = apply(el.value);
+    if (next !== el.value) el.value = next;
+  });
+}
+
 function input(field, value) {
-  const common = { name: field.name, autocomplete: "off", spellcheck: "false" };
+  const limits = {
+    ...(field.max ? { maxlength: field.max } : {}),
+    ...(field.format === "card" ? { maxlength: 23, inputmode: "numeric" } : {}),
+    ...(field.format === "expiry" ? { maxlength: 5, inputmode: "numeric" } : {}),
+    ...(field.digits ? { maxlength: field.digits, inputmode: "numeric" } : {}),
+  };
+  const common = { name: field.name, autocomplete: "off", spellcheck: "false", ...limits };
   if (field.multiline) return h("textarea", common, value);
   if (field.options)
     return h(
@@ -573,12 +602,14 @@ function input(field, value) {
       { ...common, class: "select" },
       field.options.map(([key, label]) => h("option", { value: key, selected: key === value, text: label })),
     );
-  return h("input", {
+  const el = h("input", {
     ...common,
-    value,
+    value: field.format === "card" ? groupCard(value) : value,
     ...(field.secret ? { type: "password", class: "mono" } : {}),
     ...field.input,
   });
+  constrain(field, el);
+  return el;
 }
 
 function edit(item, typeKey = item?.type) {
@@ -588,7 +619,12 @@ function edit(item, typeKey = item?.type) {
   const detail = document.getElementById("detail");
   const error = h("p", { class: "error", role: "alert" });
   const presetFolder = state.filter.startsWith("folder:") ? state.filter.slice(7) : "";
-  const fields = [h("label", { class: "field" }, h("span", { text: "Title" }), input({ name: "title" }, item?.title ?? ""))];
+  const errorFor = {};
+  const note = (name, hint) => {
+    errorFor[name] = h("span", { class: "field-error", role: "alert" });
+    return [hint ? h("span", { class: "field-hint", text: hint }) : null, errorFor[name]];
+  };
+  const fields = [h("label", { class: "field" }, h("span", { text: "Title" }), input({ name: "title", max: 200 }, item?.title ?? ""), note("title"))];
   for (const field of type.fields) {
     const value = field.list ? (item?.[field.name]?.[0] ?? "") : (item?.[field.name] ?? "");
     const control = input(field, value);
@@ -628,6 +664,7 @@ function edit(item, typeKey = item?.type) {
         { class: "field" },
         h("span", { text: field.label }),
         extras.length ? h("span", { class: "input-row" }, control, extras) : control,
+        note(field.name, field.hint),
       ),
       info,
     );
@@ -667,6 +704,14 @@ function edit(item, typeKey = item?.type) {
           tags: String(data.get("tags") ?? "").split(","),
           favorite: item?.favorite ?? state.filter === "favorites",
         };
+        for (const el of Object.values(errorFor)) el.textContent = "";
+        const problems = await call("check_item", { item: payload }, error);
+        if (problems.length) {
+          for (const p of problems) if (errorFor[p.field]) errorFor[p.field].textContent = p.message;
+          error.textContent = "Check the marked fields.";
+          form.querySelector(`[name="${problems[0].field}"]`)?.focus();
+          return;
+        }
         const id = await call("save", { id: item?.id ?? null, item: payload, meta }, error);
         state.selected = id;
         state.mode = "view";

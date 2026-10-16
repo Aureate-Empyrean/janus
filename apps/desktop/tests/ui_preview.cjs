@@ -76,6 +76,17 @@ const mock = () => {
             vault.items.push({ id: "22222222-2222-4222-8222-222222222222", type: "login", title: "GitHub", username: "adrian", password: "p", urls: [], notes: "", totp: "", folder: "", tags: [], favorite: false, history: [], updated_at: new Date().toISOString() });
             return { added: 1, skipped_existing: 0 };
           }
+          case "check_item": {
+            // A small subset of the core rules, enough to exercise the per-field display.
+            const i = args.item, errors = [];
+            if (!i.title.trim()) errors.push({ field: "title", message: "Give the item a title" });
+            if (i.type === "payment_card") {
+              const n = i.number.replace(/\D/g, "");
+              if (n && (n.length < 12 || n.length > 19)) errors.push({ field: "number", message: "Card numbers have 12 to 19 digits" });
+              if (i.security_code && !/^\d{3,4}$/.test(i.security_code)) errors.push({ field: "security_code", message: "3 or 4 digits" });
+            }
+            return errors;
+          }
           case "delete": need(); vault.items = vault.items.filter((i) => i.id !== args.id); return null;
           case "totp": need(); return { code: "287082", remaining: 17, period: 30 };
           case "generate": return { password: "Xq7#mK2!vR9@pL4$wT6^zH8&", bits: 147.3 };
@@ -156,13 +167,27 @@ const mock = () => {
     await page.click(".nav-item >> text=Payment cards");
     await page.click("text=New");
     await page.fill('input[name="title"]', "Visa");
-    await page.fill('input[name="number"]', "4111 1111 1111 1234");
-    await page.fill('input[name="security_code"]', "987");
+    // Typing aids: digits only, grouped, capped; expiry gets its slash.
+    const number = page.locator('input[name="number"]');
+    await number.pressSequentially("4111a111111111111111999");
+    await expect(number).toHaveValue("4111 1111 1111 1111 111");
+    await page.locator('input[name="expiry"]').pressSequentially("0829");
+    await expect(page.locator('input[name="expiry"]')).toHaveValue("08/29");
+    const cvc = page.locator('input[name="security_code"]');
+    await cvc.pressSequentially("12345");
+    await expect(cvc).toHaveValue("1234");
+    // The core's rules mark the offending field.
+    await cvc.fill("12");
+    await number.fill("4111 1111 1111 1111");
     await page.click("text=Add to vault");
-    await expect(page.locator(".item-row .sub")).toHaveText("•••• 1234");
+    await expect(page.locator(".field:has([name=security_code]) .field-error")).toHaveText("3 or 4 digits");
+    await page.screenshot({ path: `${out}/janus-04a-card-errors.png` });
+    await cvc.fill("987");
+    await page.click("text=Add to vault");
+    await expect(page.locator(".item-row .sub")).toHaveText("•••• 1111");
     await expect(page.locator(".kv")).not.toContainText("4111");
     await page.click('[aria-label="Reveal Card number"]');
-    await expect(page.locator(".kv")).toContainText("4111 1111 1111 1234");
+    await expect(page.locator(".kv")).toContainText("4111 1111 1111 1111");
     await page.screenshot({ path: `${out}/janus-04b-card.png` });
     // An identity document uses its own fields, including a document-type select.
     await page.click(".nav-item >> text=Identity documents");
@@ -237,7 +262,7 @@ const mock = () => {
     const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
     if (accent !== "#4fb8b0") errors.push("Teal accent missing: " + accent);
     if (errors.length) throw Error(errors.join(" | "));
-    console.log("PASS: create (weak password refused), type chooser, login with generator and live one-time code, folder/tags/favorite, password history, encrypted export, previewed import, browser CSV import, payment card (last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
+    console.log("PASS: create (weak password refused), type chooser, login with generator and live one-time code, folder/tags/favorite, password history, encrypted export, previewed import, browser CSV import, payment card (typing limits, per-field rule errors, last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
   } catch (e) {
     console.error("FAIL:", e.message, errors);
     await browser.contexts()[0]?.pages()[0]?.screenshot({ path: `${out}/janus-failure.png` }).catch(() => {});
