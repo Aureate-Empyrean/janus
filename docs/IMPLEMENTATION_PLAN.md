@@ -63,5 +63,5 @@ Scope: development-only standalone vault on Windows. Not production-safe.
 - [x] The interface warns that the source file is plaintext and asks the user to delete it.
 
 ## Next candidates (V1 per architecture)
- folders/tags/favorites; item
-history; encrypted export; import from common formats. Then browser autofill.
+
+KeePass and 1Password imports; browser autofill (early follow-up).
