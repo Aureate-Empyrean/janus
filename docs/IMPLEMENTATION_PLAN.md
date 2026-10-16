@@ -36,6 +36,14 @@ Scope: development-only standalone vault on Windows. Not production-safe.
 - [x] The detail view shows the live code with seconds remaining and Copy; the key stays
       masked.
 
+## Organization and history — 2026-10-16
+
+- [x] Folders (one per item), tags (up to 20) and favorites, with sidebar filters and search
+      over tags and folders. Metadata edits never touch secrets.
+- [x] Replaced passwords, Wi-Fi keys, API secrets and card PINs are kept newest first (up to
+      20) under "Previous values", masked like other secrets and never in the overview.
+- [x] Saving an item and its metadata is one validated write.
+
 ## Next candidates (V1 per architecture)
  folders/tags/favorites; item
 history; encrypted export; import from common formats. Then browser autofill.

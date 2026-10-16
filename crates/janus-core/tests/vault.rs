@@ -333,3 +333,96 @@ fn login_authenticator_codes_and_validation() {
     .unwrap();
     v.add(old).unwrap();
 }
+
+#[test]
+fn folders_tags_favorites_and_secret_history() {
+    use janus_core::{HISTORY_LIMIT, ItemMeta};
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let id = v.add(login("Mail", "first-password")).unwrap();
+    v.add(login("Bank", "x")).unwrap();
+    v.set_meta(
+        id,
+        ItemMeta {
+            folder: "  Work ".into(),
+            tags: vec!["email".into(), "Email".into(), " ".into(), "2fa".into()],
+            favorite: true,
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        v.set_meta(
+            id,
+            ItemMeta {
+                folder: "x".repeat(61),
+                ..Default::default()
+            }
+        ),
+        Err(Error::Invalid(_))
+    ));
+    let summary = v
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|s| s.title == "Mail")
+        .unwrap();
+    assert_eq!(summary.folder, "Work");
+    assert_eq!(summary.tags, ["email", "2fa"]);
+    assert!(summary.favorite);
+    assert_eq!(v.folders().unwrap(), ["Work"]);
+
+    // Changing the password keeps the old one; metadata survives edits and relocking.
+    v.update(id, login("Mail", "second-password")).unwrap();
+    v.update(id, login("Mail renamed", "second-password"))
+        .unwrap();
+    v.lock();
+    v.unlock(PASSWORD).unwrap();
+    let item = v.get(id).unwrap();
+    assert_eq!(item.history.len(), 1);
+    assert_eq!(
+        (
+            item.history[0].field.as_str(),
+            item.history[0].value.as_str()
+        ),
+        ("password", "first-password")
+    );
+    assert!(item.favorite && item.folder == "Work");
+    for n in 0..30 {
+        v.update(id, login("Mail", &format!("p{n}"))).unwrap();
+    }
+    let item = v.get(id).unwrap();
+    assert_eq!(item.history.len(), HISTORY_LIMIT);
+    assert_eq!(item.history[0].value, "p28");
+    // History never reaches the overview.
+    let json = serde_json::to_string(&v.list().unwrap()).unwrap();
+    assert!(!json.contains("first-password") && !json.contains("p28"));
+}
+
+#[test]
+fn save_is_all_or_nothing() {
+    use janus_core::ItemMeta;
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let meta = |folder: &str| ItemMeta {
+        folder: folder.into(),
+        tags: vec!["a".into()],
+        favorite: false,
+    };
+    let id = v.save(None, login("Mail", "one"), meta("Work")).unwrap();
+    assert!(matches!(
+        v.save(Some(id), login("Mail", "two"), meta(&"x".repeat(61))),
+        Err(Error::Invalid(_))
+    ));
+    let item = v.get(id).unwrap();
+    assert!(
+        item.history.is_empty(),
+        "rejected save must not record history"
+    );
+    match item.kind {
+        ItemKind::Login(l) => assert_eq!(l.password, "one"),
+        _ => panic!(),
+    }
+    v.save(Some(id), login("Mail", "two"), meta("Home"))
+        .unwrap();
+    assert_eq!(v.get(id).unwrap().folder, "Home");
+}

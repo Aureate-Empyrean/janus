@@ -262,11 +262,24 @@ async function refresh() {
   render();
 }
 
+function inFilter(item, filter) {
+  if (filter === "all") return true;
+  if (filter === "favorites") return item.favorite;
+  if (filter.startsWith("folder:")) return item.folder === filter.slice(7);
+  return item.type === filter;
+}
+function folders() {
+  return [...new Set(state.items.map((i) => i.folder).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" }),
+  );
+}
+
 function itemRows() {
+  const query = state.query.toLowerCase();
   const visible = state.items.filter(
     (i) =>
-      (state.filter === "all" || i.type === state.filter) &&
-      (i.title + " " + i.subtitle).toLowerCase().includes(state.query.toLowerCase()),
+      inFilter(i, state.filter) &&
+      [i.title, i.subtitle, i.folder, ...i.tags].join(" ").toLowerCase().includes(query),
   );
   if (!visible.length)
     return [h("p", { class: "empty", text: state.items.length ? "Nothing matches." : "Your vault is empty." })];
@@ -282,7 +295,7 @@ function itemRows() {
       h(
         "span",
         {},
-        h("span", { class: "title", text: i.title || "Untitled" }),
+        h("span", { class: "title" }, i.favorite ? h("span", { class: "star", "aria-label": "Favorite", text: "★" }) : null, i.title || "Untitled"),
         h("span", { class: "sub", text: i.subtitle || TYPES[i.type]?.label || "" }),
       ),
     ),
@@ -298,7 +311,7 @@ function renderList() {
 }
 
 function render() {
-  const count = (type) => state.items.filter((i) => type === "all" || i.type === type).length;
+  const count = (filter) => state.items.filter((i) => inFilter(i, filter)).length;
   const nav = (key, label) =>
     h(
       "button",
@@ -335,7 +348,11 @@ function render() {
         { class: "sidebar", "aria-label": "Janus" },
         h("div", { class: "brand" }, mark(""), h("b", { text: "JANUS" })),
         nav("all", "All items"),
+        nav("favorites", "Favorites"),
+        h("p", { class: "nav-heading", text: "Types" }),
         Object.entries(TYPES).map(([key, type]) => nav(key, type.plural)),
+        folders().length ? h("p", { class: "nav-heading", text: "Folders" }) : null,
+        folders().map((name) => nav("folder:" + name, name)),
         h("div", { class: "spacer" }),
         h("button", { class: "nav-item", type: "button", onclick: passwordChange }, h("span", { class: "label", text: "Master password" })),
         h("button", { class: "nav-item", type: "button", onclick: () => lockNow() }, h("span", { class: "label", text: "Lock" })),
@@ -451,11 +468,27 @@ async function showItem(id) {
         { class: "detail-head" },
         h("span", { class: "glyph", text: glyphFor(item) }),
         h("h2", { text: item.title || "Untitled" }),
+        h("button", {
+          class: "btn ghost star-toggle" + (item.favorite ? " on" : ""),
+          type: "button",
+          "aria-pressed": String(item.favorite),
+          "aria-label": item.favorite ? "Remove from favorites" : "Add to favorites",
+          text: item.favorite ? "★" : "☆",
+          onclick: async () => {
+            await call("set_meta", { id: item.id, meta: { folder: item.folder, tags: item.tags, favorite: !item.favorite } });
+            await refresh();
+          },
+        }),
         h("button", { class: "btn", type: "button", text: "Edit", onclick: () => edit(item) }),
         h("button", { class: "btn ghost danger", type: "button", text: "Delete", onclick: () => remove(item) }),
       ),
+      item.tags.length ? h("div", { class: "tags" }, item.tags.map((tag) => h("span", { class: "tag", text: tag }))) : null,
       rows.length ? h("div", { class: "kv" }, rows) : h("p", { class: "empty", text: "No details yet." }),
-      h("p", { class: "meta-line", text: `${type.label} · updated ${new Date(item.updated_at).toLocaleString()}` }),
+      historySection(item),
+      h("p", {
+        class: "meta-line",
+        text: [type.label, item.folder && `in ${item.folder}`, `updated ${new Date(item.updated_at).toLocaleString()}`].filter(Boolean).join(" · "),
+      }),
     ),
   );
 }
@@ -470,8 +503,9 @@ function codeRow(id) {
   const copyButton = h("button", { class: "btn ghost small", type: "button", text: "Copy", "aria-label": "Copy one-time code" });
   let current = "";
   copyButton.addEventListener("click", () => current && copy(current, "One-time code"));
+  let timer; // this row's own timer: a stale row must never stop a newer row's timer
   const tick = async () => {
-    if (!code.isConnected) return clearInterval(codeTimer);
+    if (timer && !code.isConnected) return clearInterval(timer);
     try {
       const next = await invoke("totp", { id });
       current = next.code;
@@ -479,13 +513,49 @@ function codeRow(id) {
       left.textContent = `${next.remaining}s`;
       left.classList.toggle("soon", next.remaining <= 5);
     } catch (error) {
-      clearInterval(codeTimer);
+      clearInterval(timer);
       code.textContent = String(error);
     }
   };
   tick();
-  codeTimer = setInterval(tick, 1000);
+  timer = codeTimer = setInterval(tick, 1000);
   return h("div", { class: "kv-row" }, h("span", { class: "k", text: "One-time code" }), h("span", { class: "code-cell" }, code, left), h("span", { class: "actions" }, copyButton));
+}
+
+// Replaced secrets stay recoverable; values are masked like every other secret.
+function historySection(item) {
+  if (!item.history?.length) return null;
+  const rows = item.history.map((change) => {
+    const v = h("span", { class: "v mono", text: "••••••••••••" });
+    let shown = false;
+    return h(
+      "div",
+      { class: "kv-row" },
+      h("span", { class: "k", text: new Date(change.replaced_at).toLocaleDateString() }),
+      v,
+      h(
+        "span",
+        { class: "actions" },
+        h("button", {
+          class: "btn ghost small",
+          type: "button",
+          text: "Reveal",
+          onclick: (event) => {
+            shown = !shown;
+            v.textContent = shown ? change.value : "••••••••••••";
+            event.target.textContent = shown ? "Hide" : "Reveal";
+          },
+        }),
+        h("button", { class: "btn ghost small", type: "button", text: "Copy", onclick: () => copy(change.value, "Previous " + change.field) }),
+      ),
+    );
+  });
+  return h(
+    "details",
+    { class: "history" },
+    h("summary", { text: `Previous values (${item.history.length})` }),
+    h("div", { class: "kv" }, rows),
+  );
 }
 
 function input(field, value) {
@@ -511,6 +581,7 @@ function edit(item, typeKey = item?.type) {
   const type = TYPES[typeKey];
   const detail = document.getElementById("detail");
   const error = h("p", { class: "error", role: "alert" });
+  const presetFolder = state.filter.startsWith("folder:") ? state.filter.slice(7) : "";
   const fields = [h("label", { class: "field" }, h("span", { text: "Title" }), input({ name: "title" }, item?.title ?? ""))];
   for (const field of type.fields) {
     const value = field.list ? (item?.[field.name]?.[0] ?? "") : (item?.[field.name] ?? "");
@@ -555,6 +626,25 @@ function edit(item, typeKey = item?.type) {
       info,
     );
   }
+  fields.push(
+    h(
+      "div",
+      { class: "field-pair" },
+      h(
+        "label",
+        { class: "field" },
+        h("span", { text: "Folder" }),
+        h("input", { name: "folder", value: item?.folder ?? presetFolder, list: "folder-list", autocomplete: "off", placeholder: "None" }),
+        h("datalist", { id: "folder-list" }, folders().map((name) => h("option", { value: name }))),
+      ),
+      h(
+        "label",
+        { class: "field" },
+        h("span", { text: "Tags" }),
+        h("input", { name: "tags", value: (item?.tags ?? []).join(", "), autocomplete: "off", placeholder: "Comma separated" }),
+      ),
+    ),
+  );
   const form = h(
     "form",
     {
@@ -566,7 +656,12 @@ function edit(item, typeKey = item?.type) {
           const value = String(data.get(field.name) ?? "");
           payload[field.name] = field.list ? (value ? [value] : []) : value;
         }
-        const id = await call("save", { id: item?.id ?? null, item: payload }, error);
+        const meta = {
+          folder: String(data.get("folder") ?? ""),
+          tags: String(data.get("tags") ?? "").split(","),
+          favorite: item?.favorite ?? state.filter === "favorites",
+        };
+        const id = await call("save", { id: item?.id ?? null, item: payload, meta }, error);
         state.selected = id;
         state.mode = "view";
         await refresh();
