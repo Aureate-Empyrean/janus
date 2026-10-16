@@ -24,6 +24,11 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy -p janus-core --all-targets --locked -- -D warnings
       - run: cargo test -p janus-core --locked
+      - name: Independent decryptor reads a fresh export
+        run: |
+          cargo run -q -p janus-core --example make_export --locked -- "$RUNNER_TEMP/sample.janus-export" "independent tool check"
+          python3 -m pip install --quiet --user argon2-cffi==23.1.0 pynacl==1.5.0
+          python3 tools/decrypt_export.py "$RUNNER_TEMP/sample.janus-export" "independent tool check" | grep -q '"sample-secret"'
 
   ui:
     name: Desktop UI preview (Chromium, Tauri CSP)

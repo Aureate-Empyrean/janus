@@ -541,6 +541,22 @@ textarea {
   margin-bottom: 8px;
 }
 
+.section-title {
+  margin: 28px 0 12px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.section-title:first-of-type {
+  margin-top: 0;
+}
+.import-preview {
+  margin-top: 16px;
+}
+.field input[type="file"] {
+  height: auto;
+  padding: 8px;
+}
+
 #toast {
   position: fixed;
   bottom: 20px;

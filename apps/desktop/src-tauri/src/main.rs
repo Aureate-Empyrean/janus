@@ -1,7 +1,10 @@
 // Janus desktop shell: thin commands over janus-core. DEVELOPMENT BUILD — not reviewed.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use janus_core::{FileStore, Item, ItemKind, ItemMeta, ItemSummary, TotpCode, Vault};
+use janus_core::{
+    FileStore, ImportReport, Item, ItemKind, ItemMeta, ItemSummary, TotpCode, Vault,
+};
+use std::io::Write;
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -83,6 +86,37 @@ fn totp(state: State<AppVault>, id: Uuid) -> Reply<TotpCode> {
     with(&state, |v| v.totp(id))
 }
 
+/// Writes an encrypted export to the Downloads folder and returns its path.
+#[tauri::command(async)]
+fn export_vault(
+    app: tauri::AppHandle,
+    state: State<AppVault>,
+    master: String,
+    export_password: String,
+) -> Reply<String> {
+    let bytes = with(&state, |v| v.export(&master, &export_password))?;
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let path = dir.join(format!("janus-{stamp}.janus-export"));
+    let mut file = std::fs::File::create_new(&path).map_err(|e| e.to_string())?;
+    file.write_all(&bytes).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
+#[tauri::command(async)]
+fn preview_export(state: State<AppVault>, bytes: Vec<u8>, password: String) -> Reply<Vec<ItemSummary>> {
+    with(&state, |v| v.preview_export(&bytes, &password))
+}
+
+#[tauri::command(async)]
+fn import_export(state: State<AppVault>, bytes: Vec<u8>, password: String) -> Reply<ImportReport> {
+    with(&state, |v| v.import_export(&bytes, &password))
+}
+
 #[tauri::command]
 fn delete(state: State<AppVault>, id: Uuid) -> Reply<()> {
     with(&state, |v| v.delete(id))
@@ -125,6 +159,9 @@ fn main() {
             get,
             save,
             delete,
+            export_vault,
+            preview_export,
+            import_export,
             set_meta,
             totp,
             change_password,

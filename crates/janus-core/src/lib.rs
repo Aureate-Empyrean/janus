@@ -4,12 +4,14 @@
 //! proposal that has not been reviewed. Do not store real secrets with this code.
 
 mod crypto;
+mod export;
 mod generate;
 mod item;
 mod store;
 mod totp;
 
 pub use crypto::KdfParams;
+pub use export::{EXPORT_FORMAT, EXPORT_VERSION};
 pub use generate::{generate_password, generated_entropy_bits};
 pub use item::{
     ApiSecret, HISTORY_LIMIT, Identity, Item, ItemKind, ItemMeta, ItemSummary, Login, PaymentCard,
@@ -227,6 +229,45 @@ impl<S: VaultStore> Vault<S> {
         Ok(id)
     }
 
+    /// Encrypted export of every item under a separate export password. The master password
+    /// is required again so an unattended unlocked session cannot export the vault.
+    pub fn export(&self, master: &str, export_password: &str) -> Result<Vec<u8>> {
+        let open = self.open.as_ref().ok_or(Error::Locked)?;
+        open.envelope.unwrap_key(master)?;
+        check_password(export_password)?;
+        export::seal_export(&open.contents.items, export_password, self.params)
+    }
+
+    /// Items in a Janus export, for review before importing. Nothing is changed.
+    pub fn preview_export(&self, bytes: &[u8], export_password: &str) -> Result<Vec<ItemSummary>> {
+        self.open.as_ref().ok_or(Error::Locked)?;
+        Ok(export::open_export(bytes, export_password)?
+            .iter()
+            .map(Item::summary)
+            .collect())
+    }
+
+    /// Adds the export's items, keeping their identities. Items whose identity already exists
+    /// here are left untouched and counted as skipped.
+    pub fn import_export(&mut self, bytes: &[u8], export_password: &str) -> Result<ImportReport> {
+        let items = export::open_export(bytes, export_password)?;
+        let open = self.open.as_mut().ok_or(Error::Locked)?;
+        let mut report = ImportReport::default();
+        for item in items {
+            item.kind.validate()?;
+            if open.contents.items.iter().any(|i| i.id == item.id) {
+                report.skipped_existing += 1;
+            } else {
+                open.contents.items.push(item);
+                report.added += 1;
+            }
+        }
+        if report.added > 0 {
+            self.persist()?;
+        }
+        Ok(report)
+    }
+
     /// Folder, tags and favorite; the item's secrets are not touched.
     pub fn set_meta(&mut self, id: Uuid, meta: ItemMeta) -> Result<()> {
         let meta = meta.normalized()?;
@@ -274,6 +315,12 @@ impl<S: VaultStore> Vault<S> {
         self.store.save(&open.envelope.to_bytes()?)?;
         Ok(())
     }
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct ImportReport {
+    pub added: usize,
+    pub skipped_existing: usize,
 }
 
 fn check_password(password: &str) -> Result<()> {

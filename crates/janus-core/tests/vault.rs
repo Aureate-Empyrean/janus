@@ -426,3 +426,73 @@ fn save_is_all_or_nothing() {
         .unwrap();
     assert_eq!(v.get(id).unwrap().folder, "Home");
 }
+
+#[test]
+fn encrypted_export_roundtrip_and_guards() {
+    use janus_core::ItemMeta;
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let id = v
+        .save(
+            None,
+            login("Mail", "exported-secret"),
+            ItemMeta {
+                folder: "Work".into(),
+                tags: vec![],
+                favorite: true,
+            },
+        )
+        .unwrap();
+    let export_pw = "a separate export passphrase";
+    assert!(matches!(
+        v.export("wrong master password", export_pw),
+        Err(Error::Unlock)
+    ));
+    assert!(matches!(
+        v.export(PASSWORD, "short"),
+        Err(Error::WeakPassword)
+    ));
+    let bytes = v.export(PASSWORD, export_pw).unwrap();
+    let text = String::from_utf8(bytes.clone()).unwrap();
+    assert!(!text.contains("exported-secret") && !text.contains("Mail") && !text.contains("Work"));
+
+    // Into a different vault: identities, metadata and secrets survive.
+    let mut other = vault(MemoryStore::default());
+    other.create("another vault password").unwrap();
+    assert!(matches!(
+        other.preview_export(&bytes, "wrong export password"),
+        Err(Error::Unlock)
+    ));
+    let preview = other.preview_export(&bytes, export_pw).unwrap();
+    assert_eq!(preview.len(), 1);
+    assert!(other.list().unwrap().is_empty(), "preview must not import");
+    let report = other.import_export(&bytes, export_pw).unwrap();
+    assert_eq!((report.added, report.skipped_existing), (1, 0));
+    let item = other.get(id).unwrap();
+    assert!(item.favorite && item.folder == "Work");
+    match item.kind {
+        ItemKind::Login(l) => assert_eq!(l.password, "exported-secret"),
+        _ => panic!(),
+    }
+    // Importing again changes nothing.
+    let again = other.import_export(&bytes, export_pw).unwrap();
+    assert_eq!((again.added, again.skipped_existing), (0, 1));
+
+    // Tampering with the header (e.g. weaker parameters) is detected.
+    let mut file: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let mut header: serde_json::Value =
+        serde_json::from_slice(&b64.decode(file["header"].as_str().unwrap()).unwrap()).unwrap();
+    header["exported_at"] = "2000-01-01T00:00:00Z".into();
+    file["header"] = b64.encode(serde_json::to_vec(&header).unwrap()).into();
+    let tampered = serde_json::to_vec(&file).unwrap();
+    assert!(matches!(
+        other.preview_export(&tampered, export_pw),
+        Err(Error::Unlock)
+    ));
+    assert!(matches!(
+        other.preview_export(b"{}", export_pw),
+        Err(Error::Invalid(_))
+    ));
+}

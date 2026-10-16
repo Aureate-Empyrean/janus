@@ -21,7 +21,7 @@ const FORMAT: &str = "janus-vault-dev";
 const VERSION: u32 = 1;
 const KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 24;
-const SALT_LEN: usize = 16;
+pub(crate) const SALT_LEN: usize = 16;
 
 /// Argon2id cost parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,7 +53,7 @@ impl KdfParams {
     }
 
     // Refuse files that claim trivially weak parameters (tests use the weakest allowed values).
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         if self.memory_kib < 64 || self.iterations < 1 || !(1..=16).contains(&self.parallelism) {
             return Err(Error::Format(
                 "unsupported key derivation parameters".into(),
@@ -78,6 +78,14 @@ impl VaultKey {
         Ok(Self(key))
     }
 
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    pub(crate) fn from_slice(raw: &[u8]) -> Result<Self> {
+        Ok(Self(raw.try_into().map_err(|_| Error::Unlock)?))
+    }
+
     fn cipher(&self) -> Result<XChaCha20Poly1305> {
         XChaCha20Poly1305::new_from_slice(&self.0).map_err(|_| Error::Crypto)
     }
@@ -99,7 +107,7 @@ impl Header {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-struct Sealed {
+pub(crate) struct Sealed {
     nonce: String,
     ciphertext: String,
 }
@@ -173,7 +181,7 @@ impl Envelope {
     }
 }
 
-fn derive(password: &str, salt: &[u8], params: KdfParams) -> Result<VaultKey> {
+pub(crate) fn derive(password: &str, salt: &[u8], params: KdfParams) -> Result<VaultKey> {
     let params = Params::new(
         params.memory_kib,
         params.iterations,
@@ -190,7 +198,7 @@ fn derive(password: &str, salt: &[u8], params: KdfParams) -> Result<VaultKey> {
     Ok(key)
 }
 
-fn seal(key: &VaultKey, plaintext: &[u8], aad: &[u8]) -> Result<Sealed> {
+pub(crate) fn seal(key: &VaultKey, plaintext: &[u8], aad: &[u8]) -> Result<Sealed> {
     // Random 192-bit nonces: collision risk is negligible for a vault's write volume.
     let mut nonce = [0u8; NONCE_LEN];
     random(&mut nonce)?;
@@ -210,7 +218,7 @@ fn seal(key: &VaultKey, plaintext: &[u8], aad: &[u8]) -> Result<Sealed> {
     })
 }
 
-fn open(key: &VaultKey, sealed: &Sealed, aad: &[u8]) -> Result<Vec<u8>> {
+pub(crate) fn open(key: &VaultKey, sealed: &Sealed, aad: &[u8]) -> Result<Vec<u8>> {
     let nonce: [u8; NONCE_LEN] = decode(&sealed.nonce)?
         .as_slice()
         .try_into()
@@ -232,6 +240,6 @@ fn decode(value: &str) -> Result<Vec<u8>> {
         .map_err(|_| Error::Format("encoding".into()))
 }
 
-fn random(buf: &mut [u8]) -> Result<()> {
+pub(crate) fn random(buf: &mut [u8]) -> Result<()> {
     getrandom::fill(buf).map_err(|_| Error::Crypto)
 }

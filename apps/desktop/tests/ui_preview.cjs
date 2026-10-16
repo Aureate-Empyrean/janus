@@ -52,6 +52,22 @@ const mock = () => {
             vault.items.push({ id, created_at: now, updated_at: now, history: [], ...args.item, ...tidy(args.meta) }); return id;
           }
           case "set_meta": need(); Object.assign(vault.items.find((i) => i.id === args.id), tidy(args.meta)); return null;
+          case "export_vault":
+            if (args.master !== vault.password) throw "Wrong master password, or the vault file was modified";
+            if (!args.exportPassword || args.exportPassword.length < 12) throw "The master password must be at least 12 characters";
+            return "C:\\Users\\you\\Downloads\\janus-1760000000.janus-export";
+          case "preview_export":
+          case "import_export": {
+            if (args.password !== "export passphrase here") throw "Wrong master password, or the vault file was modified";
+            if (!Array.isArray(args.bytes) || !args.bytes.length) throw "This is not a Janus export file";
+            const incoming = [
+              { id: vault.items[0].id, type: vault.items[0].type, title: vault.items[0].title, subtitle: "", folder: "", tags: [], favorite: false },
+              { id: "11111111-1111-4111-8111-111111111111", type: "wifi", title: "Cabin Wi-Fi", subtitle: "Cabin", folder: "", tags: [], favorite: false },
+            ];
+            if (cmd === "preview_export") return incoming;
+            vault.items.push({ ...incoming[1], ssid: "Cabin", password: "p", security: "WPA2", notes: "", history: [], updated_at: new Date().toISOString() });
+            return { added: 1, skipped_existing: 1 };
+          }
           case "delete": need(); vault.items = vault.items.filter((i) => i.id !== args.id); return null;
           case "totp": need(); return { code: "287082", remaining: 17, period: 30 };
           case "generate": return { password: "Xq7#mK2!vR9@pL4$wT6^zH8&", bits: 147.3 };
@@ -170,6 +186,25 @@ const mock = () => {
     await search.fill("");
     await page.click(".nav-item >> text=All items");
 
+    // Encrypted export and a previewed import.
+    await page.click("text=Export & import");
+    await page.fill("#exp-master", "correct horse battery staple");
+    await page.fill("#exp1", "export passphrase here");
+    await page.fill("#exp2", "export passphrase here");
+    await page.click("text=Export to Downloads");
+    await expect(page.getByText(/Saved to C:/)).toBeVisible();
+    await page.setInputFiles("#imp-file", { name: "janus.janus-export", mimeType: "application/json", buffer: Buffer.from("{}") });
+    await page.fill("#imp-pw", "wrong export password");
+    await page.click("text=Preview import");
+    await expect(page.getByRole("alert").last()).toContainText("Wrong");
+    await page.fill("#imp-pw", "export passphrase here");
+    await page.click("text=Preview import");
+    await expect(page.getByText("2 items in this export, 1 new.")).toBeVisible();
+    await page.screenshot({ path: `${out}/janus-06-import-preview.png` });
+    await page.click("text=Import 1 items");
+    await expect(page.locator("#toast")).toContainText("Imported 1 items, 1 already present");
+    await expect(page.locator(".item-row")).toHaveCount(5);
+
     await page.click("text=Lock");
     await expect(page.getByRole("heading", { name: "Unlock your vault" })).toBeVisible();
     await page.fill("#pw", "wrong password here");
@@ -178,14 +213,14 @@ const mock = () => {
     await page.screenshot({ path: `${out}/janus-05-unlock-error.png` });
     await page.fill("#pw", "correct horse battery staple");
     await page.click("button:has-text('Unlock')");
-    await expect(page.locator(".item-row")).toHaveCount(4);
+    await expect(page.locator(".item-row")).toHaveCount(5);
 
     const font = await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('14px "Roboto"'); });
     if (!font) errors.push("Bundled Roboto did not load");
     const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
     if (accent !== "#4fb8b0") errors.push("Teal accent missing: " + accent);
     if (errors.length) throw Error(errors.join(" | "));
-    console.log("PASS: create (weak password refused), type chooser, login with generator and live one-time code, folder/tags/favorite, password history, payment card (last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
+    console.log("PASS: create (weak password refused), type chooser, login with generator and live one-time code, folder/tags/favorite, password history, encrypted export, previewed import, payment card (last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
   } catch (e) {
     console.error("FAIL:", e.message, errors);
     await browser.contexts()[0]?.pages()[0]?.screenshot({ path: `${out}/janus-failure.png` }).catch(() => {});
