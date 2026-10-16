@@ -183,3 +183,39 @@ fn generated_passwords_are_long_varied_and_bounded() {
     assert!(generate_password(8, true).is_err());
     assert!(generated_entropy_bits(24, true) > 140.0);
 }
+
+/// The desktop UI sends and receives these exact JSON shapes over Tauri IPC.
+#[test]
+fn ipc_json_shapes_match_the_interface() {
+    let sent = serde_json::json!({
+        "type": "login", "title": "Mail", "username": "a", "password": "p",
+        "urls": ["https://example.org"], "notes": ""
+    });
+    let kind: ItemKind = serde_json::from_value(sent).unwrap();
+    let note: ItemKind = serde_json::from_value(
+        serde_json::json!({"type": "secure_note", "title": "N", "content": "c"}),
+    )
+    .unwrap();
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let id = v.add(kind).unwrap();
+    v.add(note).unwrap();
+    let item = serde_json::to_value(v.get(id).unwrap()).unwrap();
+    for key in [
+        "id",
+        "type",
+        "updated_at",
+        "title",
+        "username",
+        "password",
+        "urls",
+        "notes",
+    ] {
+        assert!(item.get(key).is_some(), "missing top-level {key}");
+    }
+    assert_eq!(item["type"], "login");
+    let summary = serde_json::to_value(&v.list().unwrap()[0]).unwrap();
+    for key in ["id", "type", "title", "subtitle", "updated_at"] {
+        assert!(summary.get(key).is_some(), "summary missing {key}");
+    }
+}

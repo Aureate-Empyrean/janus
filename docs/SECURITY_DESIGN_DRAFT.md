@@ -25,9 +25,12 @@ updates (until release signing exists), multi-device sync.
 ## Proposed construction (implemented in `crates/janus-core/src/crypto.rs`)
 
 - **Key derivation**: Argon2id (RustCrypto `argon2` 0.6, version 0x13), 16-byte random
-  salt, default 64 MiB memory, 3 passes, 1 lane. Parameters are stored in the file and
-  bounded on read (minimum and maximum), so a file cannot request trivial or
-  denial-of-service parameters.
+  salt, default 64 MiB memory, 3 passes, 1 lane. Parameters are stored in the file.
+  Downgrading an existing vault by editing them fails, because the header is
+  authenticated (below). Read-time bounds only reject absurd values: the accepted minimum
+  (64 KiB, 1 pass) equals the test parameters and is not a security floor. A real minimum
+  for production vaults is part of the review; the upper bound prevents a file from
+  requesting denial-of-service work.
 - **Key hierarchy**: the derived key-encryption key (KEK) wraps a random 256-bit vault key.
   Changing the master password re-wraps the vault key; contents are not re-encrypted.
 - **Encryption**: XChaCha20-Poly1305 (RustCrypto `chacha20poly1305` 0.11) with random

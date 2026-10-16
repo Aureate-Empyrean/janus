@@ -94,9 +94,23 @@ const mock = () => {
     await page.click("text=Add to vault");
     await page.click(".nav-item >> text=All items");
     await expect(page.locator(".item-row")).toHaveCount(2);
-    await page.fill('input[type="search"]', "mail");
+    const search = page.locator('input[type="search"]');
+    await search.pressSequentially("mail");
+    await expect(search).toHaveValue("mail");
+    await expect(search).toBeFocused();
     await expect(page.locator(".item-row")).toHaveCount(1);
     await page.screenshot({ path: `${out}/janus-04-list.png` });
+
+    // Searching or filtering while editing keeps the unsaved form.
+    await page.click("text=New");
+    await page.fill('input[name="title"]', "Unsaved draft");
+    await search.fill("");
+    await search.pressSequentially("rec");
+    await page.click(".nav-item >> text=Logins");
+    await expect(page.locator('input[name="title"]')).toHaveValue("Unsaved draft");
+    await page.click("text=Cancel");
+    await search.fill("");
+    await page.click(".nav-item >> text=All items");
 
     await page.click("text=Lock");
     await expect(page.getByRole("heading", { name: "Unlock your vault" })).toBeVisible();

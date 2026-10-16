@@ -38,12 +38,14 @@ fn status(state: State<AppVault>) -> Reply<Status> {
     })
 }
 
-#[tauri::command]
+// Argon2 takes noticeable time: run off the main thread so the window keeps painting.
+#[tauri::command(async)]
 fn create(state: State<AppVault>, password: String) -> Reply<()> {
     with(&state, |v| v.create(&password))
 }
 
-#[tauri::command]
+// Argon2 takes noticeable time: run off the main thread so the window keeps painting.
+#[tauri::command(async)]
 fn unlock(state: State<AppVault>, password: String) -> Reply<()> {
     with(&state, |v| v.unlock(&password))
 }
@@ -79,7 +81,8 @@ fn delete(state: State<AppVault>, id: Uuid) -> Reply<()> {
     with(&state, |v| v.delete(id))
 }
 
-#[tauri::command]
+// Argon2 takes noticeable time: run off the main thread so the window keeps painting.
+#[tauri::command(async)]
 fn change_password(state: State<AppVault>, current: String, new: String) -> Reply<()> {
     with(&state, |v| v.change_password(&current, &new))
 }

@@ -184,12 +184,42 @@ async function refresh() {
   render();
 }
 
-function render() {
+function itemRows() {
   const visible = state.items.filter(
     (i) =>
       (state.filter === "all" || i.type === state.filter) &&
       (i.title + " " + i.subtitle).toLowerCase().includes(state.query.toLowerCase()),
   );
+  if (!visible.length)
+    return [h("p", { class: "empty", text: state.items.length ? "Nothing matches." : "Your vault is empty." })];
+  return visible.map((i) =>
+    h(
+      "button",
+      {
+        class: "item-row" + (state.selected === i.id ? " active" : ""),
+        type: "button",
+        onclick: () => select(i.id),
+      },
+      h("span", { class: "glyph", text: glyphFor(i) }),
+      h(
+        "span",
+        {},
+        h("span", { class: "title", text: i.title || "Untitled" }),
+        h("span", { class: "sub", text: i.subtitle || (i.type === "login" ? "Login" : "Secure note") }),
+      ),
+    ),
+  );
+}
+
+// Searching and filtering only touch the list and sidebar, so typing keeps focus and an
+// open edit form keeps its unsaved input.
+function renderList() {
+  document.querySelector(".items")?.replaceChildren(...itemRows());
+  for (const el of document.querySelectorAll(".sidebar [data-filter]"))
+    el.classList.toggle("active", el.dataset.filter === state.filter);
+}
+
+function render() {
   const count = (type) => state.items.filter((i) => type === "all" || i.type === type).length;
   const nav = (key, label) =>
     h(
@@ -197,9 +227,10 @@ function render() {
       {
         class: "nav-item" + (state.filter === key ? " active" : ""),
         type: "button",
+        "data-filter": key,
         onclick: () => {
           state.filter = key;
-          render();
+          renderList();
         },
       },
       h("span", { class: "label", text: label }),
@@ -213,29 +244,10 @@ function render() {
     value: state.query,
     oninput: (event) => {
       state.query = event.target.value;
-      render();
-      document.querySelector(".list-head .input")?.focus();
+      renderList();
     },
   });
-  const rows = visible.length
-    ? visible.map((i) =>
-        h(
-          "button",
-          {
-            class: "item-row" + (state.selected === i.id ? " active" : ""),
-            type: "button",
-            onclick: () => select(i.id),
-          },
-          h("span", { class: "glyph", text: glyphFor(i) }),
-          h(
-            "span",
-            {},
-            h("span", { class: "title", text: i.title || "Untitled" }),
-            h("span", { class: "sub", text: i.subtitle || (i.type === "login" ? "Login" : "Secure note") }),
-          ),
-        ),
-      )
-    : [h("p", { class: "empty", text: state.items.length ? "Nothing matches." : "Your vault is empty." })];
+  const rows = itemRows();
 
   const detail = h("section", { class: "detail", id: "detail" });
   $app.replaceChildren(
