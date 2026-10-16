@@ -59,3 +59,6 @@ Whole-vault encryption means item titles and usernames are protected at rest too
 - The vault format is a development format (`janus-vault-dev`); a reviewed design may
   replace it, with a migration.
 - No release signing, so installers cannot yet be verified by users.
+- Imports read plaintext exports of other password managers. Janus keeps their contents
+  only in memory, but cannot protect or erase the source file or copies the WebView makes
+  while reading it (architecture: handling of plaintext source exports is Open).

@@ -1,7 +1,10 @@
 // Janus desktop shell: thin commands over janus-core. DEVELOPMENT BUILD — not reviewed.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use janus_core::{FileStore, ImportReport, Item, ItemKind, ItemMeta, ItemSummary, TotpCode, Vault};
+use janus_core::{
+    FileStore, ImportFormat, ImportPreview, ImportReport, Item, ItemKind, ItemMeta, ItemSummary,
+    TotpCode, Vault,
+};
 use serde::Serialize;
 use std::io::Write;
 use std::sync::Mutex;
@@ -119,6 +122,24 @@ fn import_export(state: State<AppVault>, bytes: Vec<u8>, password: String) -> Re
     with(&state, |v| v.import_export(&bytes, &password))
 }
 
+#[tauri::command(async)]
+fn preview_import(
+    state: State<AppVault>,
+    format: ImportFormat,
+    bytes: Vec<u8>,
+) -> Reply<ImportPreview> {
+    with(&state, |v| v.preview_import(format, &bytes))
+}
+
+#[tauri::command(async)]
+fn import_items(
+    state: State<AppVault>,
+    format: ImportFormat,
+    bytes: Vec<u8>,
+) -> Reply<ImportReport> {
+    with(&state, |v| v.import_items(format, &bytes))
+}
+
 #[tauri::command]
 fn delete(state: State<AppVault>, id: Uuid) -> Reply<()> {
     with(&state, |v| v.delete(id))
@@ -164,6 +185,8 @@ fn main() {
             export_vault,
             preview_export,
             import_export,
+            preview_import,
+            import_items,
             set_meta,
             totp,
             change_password,

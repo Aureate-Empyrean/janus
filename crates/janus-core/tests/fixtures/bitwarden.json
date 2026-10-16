@@ -1,0 +1,27 @@
+{
+  "encrypted": false,
+  "folders": [{ "id": "f1", "name": "Banking" }],
+  "items": [
+    {
+      "id": "bw-1", "folderId": "f1", "type": 1, "name": "Bank", "notes": "main account",
+      "favorite": true,
+      "fields": [{ "name": "Customer ID", "value": "C-778", "type": 0 }],
+      "login": {
+        "username": "adrian", "password": "bank-pass-new", "totp": "otpauth://totp/Bank?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+        "uris": [{ "uri": "https://bank.example" }, { "uri": "https://app.bank.example" }]
+      },
+      "passwordHistory": [{ "lastUsedDate": "2026-01-02T03:04:05Z", "password": "bank-pass-old" }]
+    },
+    { "id": "bw-2", "folderId": null, "type": 2, "name": "Recovery", "notes": "codes here", "favorite": false, "secureNote": { "type": 0 } },
+    {
+      "id": "bw-3", "type": 3, "name": "Visa", "notes": null, "favorite": false,
+      "card": { "cardholderName": "A K", "brand": "Visa", "number": "4111111111111234", "expMonth": "8", "expYear": "2029", "code": "cvc-123-x" }
+    },
+    {
+      "id": "bw-4", "type": 4, "name": "Me", "favorite": false,
+      "identity": { "firstName": "Adrian", "lastName": "K", "passportNumber": "PX-998877", "email": "a@example.org", "country": "SK" }
+    },
+    { "id": "bw-5", "type": 5, "name": "Server key", "favorite": false, "sshKey": { "privateKey": "ssh-private-x" } },
+    { "id": "bw-6", "type": 1, "name": "Weird 2FA", "favorite": false, "login": { "username": "u", "password": "p", "totp": "not-a-key!!" } }
+  ]
+}

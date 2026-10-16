@@ -812,6 +812,64 @@ function transfer() {
     h("div", { class: "form-actions" }, h("button", { class: "btn", type: "submit", text: "Preview import" })),
   );
 
+  const otherError = h("p", { class: "error", role: "alert" });
+  const otherPreview = h("div", { class: "import-preview" });
+  const otherForm = h(
+    "form",
+    {
+      onsubmit: async (event) => {
+        event.preventDefault();
+        const file = document.getElementById("other-file").files[0];
+        if (!file) {
+          otherError.textContent = "Choose an export file first";
+          return;
+        }
+        const format = document.getElementById("other-format").value;
+        const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+        const plan = await call("preview_import", { format, bytes }, otherError);
+        otherPreview.replaceChildren(
+          h("p", { text: `${plan.items.length} items will be added as new items.` }),
+          plan.kept_in_notes ? h("p", { class: "hint", text: `${plan.kept_in_notes} fields without a Janus counterpart are kept in the items' notes.` }) : null,
+          plan.warnings.map((w) => h("p", { class: "hint warn", text: w })),
+          h("div", { class: "kv" }, plan.items.slice(0, 50).map((i) => h("div", { class: "kv-row" }, h("span", { class: "k", text: TYPES[i.type]?.label ?? i.type }), h("span", { class: "v", text: i.title || "Untitled" }), h("span", { class: "actions", text: i.folder })))),
+          plan.items.length > 50 ? h("p", { class: "hint", text: `and ${plan.items.length - 50} more` }) : null,
+          h(
+            "div",
+            { class: "form-actions" },
+            h("button", {
+              class: "btn primary",
+              type: "button",
+              text: `Import ${plan.items.length} items`,
+              disabled: !plan.items.length,
+              onclick: async () => {
+                const report = await call("import_items", { format, bytes }, otherError);
+                otherPreview.replaceChildren(h("p", { class: "hint warn", text: `Imported ${report.added} items. Now delete the file you imported: it contains your passwords unencrypted.` }));
+                otherForm.reset();
+                state.items = await call("list");
+                renderList();
+              },
+            }),
+          ),
+        );
+      },
+    },
+    h(
+      "label",
+      { class: "field" },
+      h("span", { text: "Format" }),
+      h(
+        "select",
+        { id: "other-format", class: "select" },
+        h("option", { value: "bitwarden_json", text: "Bitwarden (unencrypted JSON)" }),
+        h("option", { value: "browser_csv", text: "Browser passwords CSV (Chrome, Edge, Firefox)" }),
+      ),
+    ),
+    h("label", { class: "field" }, h("span", { text: "Export file" }), h("input", { id: "other-file", type: "file", accept: ".json,.csv" })),
+    h("p", { class: "hint warn", text: "These files contain your passwords unencrypted. Janus reads them only in memory, but cannot protect or erase the file itself: delete it after importing." }),
+    otherError,
+    h("div", { class: "form-actions" }, h("button", { class: "btn", type: "submit", text: "Preview" })),
+  );
+
   document.getElementById("detail").replaceChildren(
     h(
       "div",
@@ -822,6 +880,9 @@ function transfer() {
       h("h3", { class: "section-title", text: "Import a Janus export" }),
       importForm,
       preview,
+      h("h3", { class: "section-title", text: "Import from another password manager" }),
+      otherForm,
+      otherPreview,
     ),
   );
 }

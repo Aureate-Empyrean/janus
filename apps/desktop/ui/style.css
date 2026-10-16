@@ -557,6 +557,10 @@ textarea {
   padding: 8px;
 }
 
+.hint.warn {
+  color: var(--warn);
+}
+
 #toast {
   position: fixed;
   bottom: 20px;

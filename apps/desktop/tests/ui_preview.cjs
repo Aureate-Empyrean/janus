@@ -68,6 +68,14 @@ const mock = () => {
             vault.items.push({ ...incoming[1], ssid: "Cabin", password: "p", security: "WPA2", notes: "", history: [], updated_at: new Date().toISOString() });
             return { added: 1, skipped_existing: 1 };
           }
+          case "preview_import":
+          case "import_items": {
+            if (args.format !== "browser_csv" || !args.bytes.length) throw "This is not a CSV file";
+            const plan = { items: [{ id: "x", type: "login", title: "GitHub", subtitle: "adrian", folder: "", tags: [], favorite: false }], warnings: [], kept_in_notes: 2 };
+            if (cmd === "preview_import") return plan;
+            vault.items.push({ id: "22222222-2222-4222-8222-222222222222", type: "login", title: "GitHub", username: "adrian", password: "p", urls: [], notes: "", totp: "", folder: "", tags: [], favorite: false, history: [], updated_at: new Date().toISOString() });
+            return { added: 1, skipped_existing: 0 };
+          }
           case "delete": need(); vault.items = vault.items.filter((i) => i.id !== args.id); return null;
           case "totp": need(); return { code: "287082", remaining: 17, period: 30 };
           case "generate": return { password: "Xq7#mK2!vR9@pL4$wT6^zH8&", bits: 147.3 };
@@ -196,7 +204,7 @@ const mock = () => {
     await page.setInputFiles("#imp-file", { name: "janus.janus-export", mimeType: "application/json", buffer: Buffer.from("{}") });
     await page.fill("#imp-pw", "wrong export password");
     await page.click("text=Preview import");
-    await expect(page.getByRole("alert").last()).toContainText("Wrong");
+    await expect(page.locator("form:has(#imp-file) [role=alert]")).toContainText("Wrong");
     await page.fill("#imp-pw", "export passphrase here");
     await page.click("text=Preview import");
     await expect(page.getByText("2 items in this export, 1 new.")).toBeVisible();
@@ -204,6 +212,15 @@ const mock = () => {
     await page.click("text=Import 1 items");
     await expect(page.locator("#toast")).toContainText("Imported 1 items, 1 already present");
     await expect(page.locator(".item-row")).toHaveCount(5);
+    // Import from a browser CSV: plaintext warning, preview, then the delete reminder.
+    await page.selectOption("#other-format", "browser_csv");
+    await page.setInputFiles("#other-file", { name: "passwords.csv", mimeType: "text/csv", buffer: Buffer.from("name,url,username,password\nGitHub,,adrian,p\n") });
+    await page.click("button:has-text('Preview') >> nth=-1");
+    await expect(page.getByText("1 items will be added as new items.")).toBeVisible();
+    await expect(page.getByText("2 fields without a Janus counterpart")).toBeVisible();
+    await page.click("text=Import 1 items");
+    await expect(page.getByText(/Now delete the file you imported/)).toBeVisible();
+    await expect(page.locator(".item-row")).toHaveCount(6);
 
     await page.click("text=Lock");
     await expect(page.getByRole("heading", { name: "Unlock your vault" })).toBeVisible();
@@ -213,14 +230,14 @@ const mock = () => {
     await page.screenshot({ path: `${out}/janus-05-unlock-error.png` });
     await page.fill("#pw", "correct horse battery staple");
     await page.click("button:has-text('Unlock')");
-    await expect(page.locator(".item-row")).toHaveCount(5);
+    await expect(page.locator(".item-row")).toHaveCount(6);
 
     const font = await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('14px "Roboto"'); });
     if (!font) errors.push("Bundled Roboto did not load");
     const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
     if (accent !== "#4fb8b0") errors.push("Teal accent missing: " + accent);
     if (errors.length) throw Error(errors.join(" | "));
-    console.log("PASS: create (weak password refused), type chooser, login with generator and live one-time code, folder/tags/favorite, password history, encrypted export, previewed import, payment card (last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
+    console.log("PASS: create (weak password refused), type chooser, login with generator and live one-time code, folder/tags/favorite, password history, encrypted export, previewed import, browser CSV import, payment card (last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
   } catch (e) {
     console.error("FAIL:", e.message, errors);
     await browser.contexts()[0]?.pages()[0]?.screenshot({ path: `${out}/janus-failure.png` }).catch(() => {});

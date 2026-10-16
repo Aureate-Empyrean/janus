@@ -10,6 +10,7 @@ description = "Janus vault core (development build; cryptographic design not rev
 argon2 = "0.6.0"
 base64 = "0.23.1"
 chacha20poly1305 = "0.11.0"
+csv = "1.4.0"
 data-encoding = "2.11.1"
 getrandom = "0.4.3"
 hmac = "0.13.0"

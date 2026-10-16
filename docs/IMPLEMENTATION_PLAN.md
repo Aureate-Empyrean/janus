@@ -53,6 +53,15 @@ Scope: development-only standalone vault on Windows. Not production-safe.
 - [x] Import of Janus exports with a preview; identities are kept and items already present
       are left unchanged.
 
+## Import from other password managers — 2026-10-16
+
+- [x] Bitwarden unencrypted JSON (logins with all URLs, authenticator key and password
+      history; secure notes; cards; identities mapped to documents; unknown types kept as
+      secure notes) and browser password CSV (Chrome, Edge, Firefox; header-driven).
+- [x] Preview first. Fields without a Janus counterpart are appended to notes and counted,
+      never dropped. Encrypted Bitwarden exports are refused with instructions.
+- [x] The interface warns that the source file is plaintext and asks the user to delete it.
+
 ## Next candidates (V1 per architecture)
  folders/tags/favorites; item
 history; encrypted export; import from common formats. Then browser autofill.
