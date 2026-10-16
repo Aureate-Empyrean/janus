@@ -473,6 +473,24 @@ textarea {
   background: var(--accent-hover);
 }
 
+.code-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.code {
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  color: var(--accent-hi);
+}
+.code-left {
+  font-size: 12px;
+  color: var(--text-meta);
+}
+.code-left.soon {
+  color: var(--warn);
+}
+
 #toast {
   position: fixed;
   bottom: 20px;

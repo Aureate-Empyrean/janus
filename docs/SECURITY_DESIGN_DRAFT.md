@@ -41,6 +41,8 @@ updates (until release signing exists), multi-device sync.
 - **Memory**: keys and decrypted items are zeroized on drop (`zeroize`); locking drops them.
   Copies inside the WebView, serde buffers and the OS are not controlled — a known limit.
 - **Storage**: one JSON envelope file, written to a temporary file, flushed and renamed.
+- **One-time codes**: TOTP keys are vault contents like passwords; codes are computed
+  in the core (RustCrypto `hmac`/`sha1`/`sha2`) and the key is zeroized after use.
 - **Password generator**: unbiased rejection sampling from the CSPRNG, look-alike
   characters removed; entropy is reported from the generation process.
 

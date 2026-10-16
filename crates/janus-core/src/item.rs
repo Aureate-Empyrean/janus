@@ -11,6 +11,9 @@ pub struct Login {
     pub password: String,
     pub urls: Vec<String>,
     pub notes: String,
+    /// Authenticator key: Base32 or an otpauth://totp/ link. Empty when not used.
+    #[serde(default)]
+    pub totp: String,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
@@ -80,6 +83,15 @@ pub enum ItemKind {
 }
 
 impl ItemKind {
+    pub(crate) fn validate(&self) -> Result<()> {
+        if let ItemKind::Login(login) = self
+            && !login.totp.trim().is_empty()
+        {
+            crate::Totp::parse(&login.totp)?;
+        }
+        Ok(())
+    }
+
     fn title(&self) -> &str {
         match self {
             ItemKind::Login(i) => &i.title,

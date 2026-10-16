@@ -10,9 +10,13 @@ description = "Janus vault core (development build; cryptographic design not rev
 argon2 = "0.6.0"
 base64 = "0.23.1"
 chacha20poly1305 = "0.11.0"
+data-encoding = "2.11.1"
 getrandom = "0.4.3"
+hmac = "0.13.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sha1 = "0.11.0"
+sha2 = "=0.11.0"
 thiserror = "2.0.21"
 time = { version = "0.3.55", features = ["serde", "formatting", "parsing"] }
 uuid = { version = "1.28.0", features = ["v4", "serde"] }
