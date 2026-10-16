@@ -1,0 +1,16 @@
+[package]
+name = "janus-desktop"
+version = "0.1.0"
+description = "Janus desktop client (development build; cryptographic design not reviewed)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "=2.7.1", features = [] }
+
+[dependencies]
+janus-core = { path = "../../../crates/janus-core" }
+tauri = { version = "=2.12.1", features = [] }
+serde = { version = "1", features = ["derive"] }
+uuid = { version = "1", features = ["serde"] }

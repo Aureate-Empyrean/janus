@@ -1,0 +1,9 @@
+[workspace]
+resolver = "3"
+members = ["crates/janus-core", "apps/desktop/src-tauri"]
+default-members = ["crates/janus-core"]
+
+[workspace.package]
+edition = "2024"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/Aureate-Empyrean/janus"

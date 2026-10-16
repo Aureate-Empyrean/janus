@@ -1,0 +1,185 @@
+use janus_core::{
+    Error, FileStore, ItemKind, KdfParams, Login, MemoryStore, SecureNote, Vault, VaultStore,
+};
+
+const PASSWORD: &str = "correct horse battery staple";
+
+fn vault<S: VaultStore>(store: S) -> Vault<S> {
+    Vault::with_params(store, KdfParams::insecure_for_tests())
+}
+
+fn login(title: &str, password: &str) -> ItemKind {
+    ItemKind::Login(Login {
+        title: title.into(),
+        username: "adrian".into(),
+        password: password.into(),
+        urls: vec!["https://example.org".into()],
+        notes: String::new(),
+    })
+}
+
+#[test]
+fn roundtrip_through_file_and_fresh_instance() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("vault.janus");
+    let mut v = vault(FileStore::new(&path));
+    assert!(!v.exists().unwrap());
+    v.create(PASSWORD).unwrap();
+    let id = v.add(login("Mail", "s3cret-value")).unwrap();
+    v.add(ItemKind::SecureNote(SecureNote {
+        title: "Recovery".into(),
+        content: "codes".into(),
+    }))
+    .unwrap();
+
+    let mut again = vault(FileStore::new(&path));
+    assert!(!again.is_unlocked());
+    again.unlock(PASSWORD).unwrap();
+    let titles: Vec<_> = again.list().unwrap().into_iter().map(|s| s.title).collect();
+    assert_eq!(titles, ["Mail", "Recovery"]);
+    match again.get(id).unwrap().kind {
+        ItemKind::Login(l) => assert_eq!(l.password, "s3cret-value"),
+        _ => panic!("wrong kind"),
+    }
+    assert!(!dir.path().join("vault.tmp").exists());
+}
+
+#[test]
+fn file_contains_no_plaintext() {
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    v.add(login("Bank of Example", "hunter2-plaintext"))
+        .unwrap();
+    let bytes = String::from_utf8(v_bytes(&v)).unwrap();
+    for secret in [
+        "Bank of Example",
+        "hunter2-plaintext",
+        "adrian",
+        "example.org",
+        PASSWORD,
+    ] {
+        assert!(
+            !bytes.contains(secret),
+            "{secret} leaked into the vault file"
+        );
+    }
+}
+
+fn v_bytes(v: &Vault<MemoryStore>) -> Vec<u8> {
+    v.store().bytes.clone().unwrap()
+}
+
+#[test]
+fn wrong_password_and_weak_password() {
+    let mut v = vault(MemoryStore::default());
+    assert!(matches!(v.create("short"), Err(Error::WeakPassword)));
+    v.create(PASSWORD).unwrap();
+    assert!(matches!(v.create(PASSWORD), Err(Error::AlreadyExists)));
+    v.lock();
+    assert!(matches!(
+        v.unlock("correct horse battery stapler"),
+        Err(Error::Unlock)
+    ));
+    assert!(!v.is_unlocked());
+    v.unlock(PASSWORD).unwrap();
+}
+
+#[test]
+fn lock_drops_access() {
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let id = v.add(login("Mail", "x")).unwrap();
+    v.lock();
+    assert!(matches!(v.list(), Err(Error::Locked)));
+    assert!(matches!(v.get(id), Err(Error::Locked)));
+    assert!(matches!(v.add(login("New", "y")), Err(Error::Locked)));
+}
+
+#[test]
+fn tampering_is_detected() {
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    v.add(login("Mail", "x")).unwrap();
+    let original: serde_json::Value = serde_json::from_slice(&v_bytes(&v)).unwrap();
+
+    let reopen = |value: &serde_json::Value| {
+        let mut t = vault(MemoryStore {
+            bytes: Some(serde_json::to_vec(value).unwrap()),
+        });
+        t.unlock(PASSWORD)
+    };
+    assert!(reopen(&original).is_ok());
+
+    // Flip one ciphertext character of the contents.
+    let mut payload = original.clone();
+    let ct = payload["payload"]["ciphertext"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let flipped = if ct.starts_with('A') { "B" } else { "A" }.to_owned() + &ct[1..];
+    payload["payload"]["ciphertext"] = flipped.into();
+    assert!(matches!(reopen(&payload), Err(Error::Unlock)));
+
+    // Header values are authenticated: changing KDF parameters must not silently pass.
+    let mut params = original.clone();
+    params["header"]["params"]["iterations"] = 2.into();
+    assert!(matches!(reopen(&params), Err(Error::Unlock)));
+
+    // Trivially weak parameters are refused before any derivation.
+    let mut weak = original.clone();
+    weak["header"]["params"]["memory_kib"] = 8.into();
+    assert!(matches!(reopen(&weak), Err(Error::Format(_))));
+
+    let mut other = original;
+    other["header"]["format"] = "something-else".into();
+    assert!(matches!(reopen(&other), Err(Error::Format(_))));
+}
+
+#[test]
+fn change_password_requires_current() {
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    v.add(login("Mail", "x")).unwrap();
+    assert!(matches!(
+        v.change_password("not the password", "a brand new passphrase"),
+        Err(Error::Unlock)
+    ));
+    v.change_password(PASSWORD, "a brand new passphrase")
+        .unwrap();
+    v.lock();
+    assert!(matches!(v.unlock(PASSWORD), Err(Error::Unlock)));
+    v.unlock("a brand new passphrase").unwrap();
+    assert_eq!(v.list().unwrap().len(), 1);
+}
+
+#[test]
+fn summaries_hide_secrets_and_kind_is_stable() {
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let id = v.add(login("Mail", "never-in-summary")).unwrap();
+    let json = serde_json::to_string(&v.list().unwrap()).unwrap();
+    assert!(!json.contains("never-in-summary"));
+    assert!(json.contains("\"type\":\"login\""));
+    let note = ItemKind::SecureNote(SecureNote {
+        title: "n".into(),
+        content: "c".into(),
+    });
+    assert!(matches!(v.update(id, note), Err(Error::KindMismatch)));
+    v.update(id, login("Mail 2", "z")).unwrap();
+    v.delete(id).unwrap();
+    assert!(matches!(v.delete(id), Err(Error::ItemNotFound)));
+}
+
+#[test]
+fn generated_passwords_are_long_varied_and_bounded() {
+    use janus_core::{generate_password, generated_entropy_bits};
+    let a = generate_password(24, true).unwrap();
+    let b = generate_password(24, true).unwrap();
+    assert_eq!(a.chars().count(), 24);
+    assert_ne!(*a, *b);
+    assert!(!a.contains(['0', 'O', '1', 'l', 'I']));
+    let plain = generate_password(64, false).unwrap();
+    assert!(plain.chars().all(|c| c.is_ascii_alphanumeric()));
+    assert!(generate_password(8, true).is_err());
+    assert!(generated_entropy_bits(24, true) > 140.0);
+}
