@@ -1,11 +1,9 @@
 // Janus desktop shell: thin commands over janus-core. DEVELOPMENT BUILD — not reviewed.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use janus_core::{
-    FileStore, ImportReport, Item, ItemKind, ItemMeta, ItemSummary, TotpCode, Vault,
-};
-use std::io::Write;
+use janus_core::{FileStore, ImportReport, Item, ItemKind, ItemMeta, ItemSummary, TotpCode, Vault};
 use serde::Serialize;
+use std::io::Write;
 use std::sync::Mutex;
 use tauri::{Manager, State};
 use uuid::Uuid;
@@ -108,7 +106,11 @@ fn export_vault(
 }
 
 #[tauri::command(async)]
-fn preview_export(state: State<AppVault>, bytes: Vec<u8>, password: String) -> Reply<Vec<ItemSummary>> {
+fn preview_export(
+    state: State<AppVault>,
+    bytes: Vec<u8>,
+    password: String,
+) -> Reply<Vec<ItemSummary>> {
     with(&state, |v| v.preview_export(&bytes, &password))
 }
 

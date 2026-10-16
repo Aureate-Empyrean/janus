@@ -232,8 +232,8 @@ fn every_item_type_roundtrips_and_summaries_stay_non_secret() {
             cardholder: "A K".into(),
             number: "4111 1111 1111 1234".into(),
             expiry: "08/29".into(),
-            security_code: "987".into(),
-            pin: "4321".into(),
+            security_code: "cvc-987-x".into(),
+            pin: "pin-4321-x".into(),
             notes: String::new(),
         }))
         .unwrap();
@@ -271,8 +271,8 @@ fn every_item_type_roundtrips_and_summaries_stay_non_secret() {
     let json = serde_json::to_string(&summaries).unwrap();
     for secret in [
         "4111 1111",
-        "987",
-        "4321",
+        "cvc-987-x",
+        "pin-4321-x",
         "X1234567",
         "wifi-secret-pass",
         "ghp_secretvalue",
@@ -293,7 +293,10 @@ fn every_item_type_roundtrips_and_summaries_stay_non_secret() {
     assert_eq!(sub("GitHub token"), "GitHub");
     match v.get(card).unwrap().kind {
         ItemKind::PaymentCard(c) => {
-            assert_eq!((c.security_code.as_str(), c.pin.as_str()), ("987", "4321"))
+            assert_eq!(
+                (c.security_code.as_str(), c.pin.as_str()),
+                ("cvc-987-x", "pin-4321-x")
+            )
         }
         _ => panic!("wrong kind"),
     }
