@@ -25,7 +25,8 @@ const mock = () => {
     const digits = (i.number || "").replace(/\D/g, "");
     return { login: i.username, wifi: i.ssid, api_secret: i.service, payment_card: digits.length >= 8 ? "•••• " + digits.slice(-4) : "" }[i.type] ?? "";
   };
-  const summary = (i) => ({ id: i.id, type: i.type, title: i.title, subtitle: subtitle(i), updated_at: i.updated_at });
+  const summary = (i) => ({ id: i.id, type: i.type, title: i.title, subtitle: subtitle(i), folder: i.folder, tags: i.tags, favorite: i.favorite, updated_at: i.updated_at });
+  const tidy = (m) => ({ folder: m.folder.trim(), tags: m.tags.map((t) => t.trim()).filter(Boolean), favorite: m.favorite });
   window.__calls = [];
   window.__TAURI__ = {
     core: {
@@ -41,10 +42,16 @@ const mock = () => {
           case "get": need(); return { ...vault.items.find((i) => i.id === args.id) };
           case "save": need(); {
             const now = new Date().toISOString();
-            if (args.id) { const i = vault.items.find((x) => x.id === args.id); Object.assign(i, args.item, { updated_at: now }); return i.id; }
+            if (args.id) {
+              const i = vault.items.find((x) => x.id === args.id);
+              if (i.password && i.password !== args.item.password) i.history.unshift({ field: "password", value: i.password, replaced_at: now });
+              Object.assign(i, args.item, tidy(args.meta), { updated_at: now });
+              return i.id;
+            }
             const id = "00000000-0000-4000-8000-00000000000" + ++n;
-            vault.items.push({ id, created_at: now, updated_at: now, ...args.item }); return id;
+            vault.items.push({ id, created_at: now, updated_at: now, history: [], ...args.item, ...tidy(args.meta) }); return id;
           }
+          case "set_meta": need(); Object.assign(vault.items.find((i) => i.id === args.id), tidy(args.meta)); return null;
           case "delete": need(); vault.items = vault.items.filter((i) => i.id !== args.id); return null;
           case "totp": need(); return { code: "287082", remaining: 17, period: 30 };
           case "generate": return { password: "Xq7#mK2!vR9@pL4$wT6^zH8&", bits: 147.3 };
@@ -87,6 +94,8 @@ const mock = () => {
     await page.click("text=Generate");
     await page.fill('input[name="urls"]', "https://mail.example.org");
     await page.fill('input[name="totp"]', "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
+    await page.fill('input[name="folder"]', "Work");
+    await page.fill('input[name="tags"]', "email, 2fa");
     await page.screenshot({ path: `${out}/janus-02-new-login.png` });
     await page.click("text=Add to vault");
     await expect(page.getByRole("heading", { name: "Example Mail" })).toBeVisible();
@@ -95,7 +104,24 @@ const mock = () => {
     await expect(page.locator(".kv")).toContainText("Xq7#mK2");
     await expect(page.locator(".code")).toHaveText("287 082");
     await expect(page.locator(".kv")).not.toContainText("GEZDGNBV");
+    await expect(page.locator(".tag")).toHaveText(["email", "2fa"]);
+    await expect(page.locator(".nav-item >> text=Work")).toBeVisible();
+    // Favorite toggle and a password change kept in history.
+    await page.click('[aria-label="Add to favorites"]');
+    await expect(page.locator(".item-row .star")).toBeVisible();
+    await page.click("text=Edit");
+    await page.fill('input[name="password"]', "a-brand-new-password-value");
+    await page.click("text=Save");
+    await expect(page.locator(".history summary")).toHaveText("Previous values (1)");
+    await page.click(".history summary");
+    await page.click(".history >> text=Reveal");
+    await expect(page.locator(".history")).toContainText("Xq7#mK2");
+    await page.click(".nav-item >> text=Favorites");
+    await expect(page.locator(".item-row")).toHaveCount(1);
+    await page.click(".nav-item >> text=All items");
+    await expect(page.locator(".code")).toHaveText("287 082");
     await page.screenshot({ path: `${out}/janus-03-detail.png` });
+    await page.click(".nav-item >> text=Logins");
 
     await page.click(".nav-item >> text=Secure notes");
     await page.click("text=New");
@@ -159,7 +185,7 @@ const mock = () => {
     const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
     if (accent !== "#4fb8b0") errors.push("Teal accent missing: " + accent);
     if (errors.length) throw Error(errors.join(" | "));
-    console.log("PASS: create (weak password refused), type chooser, login with generator and live one-time code, payment card (last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
+    console.log("PASS: create (weak password refused), type chooser, login with generator and live one-time code, folder/tags/favorite, password history, payment card (last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
   } catch (e) {
     console.error("FAIL:", e.message, errors);
     await browser.contexts()[0]?.pages()[0]?.screenshot({ path: `${out}/janus-failure.png` }).catch(() => {});

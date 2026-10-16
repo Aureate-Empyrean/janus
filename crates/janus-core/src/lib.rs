@@ -12,8 +12,8 @@ mod totp;
 pub use crypto::KdfParams;
 pub use generate::{generate_password, generated_entropy_bits};
 pub use item::{
-    ApiSecret, Identity, Item, ItemKind, ItemSummary, Login, PaymentCard, SecureNote,
-    WifiCredential,
+    ApiSecret, HISTORY_LIMIT, Identity, Item, ItemKind, ItemMeta, ItemSummary, Login, PaymentCard,
+    SecretChange, SecureNote, WifiCredential,
 };
 pub use store::{FileStore, MemoryStore, VaultStore};
 pub use totp::{Algorithm as TotpAlgorithm, Totp, TotpCode};
@@ -195,6 +195,65 @@ impl<S: VaultStore> Vault<S> {
             .ok_or(Error::ItemNotFound)?;
         item.replace(kind)?;
         self.persist()
+    }
+
+    /// Creates (`id` = None) or updates an item together with its metadata, in one write.
+    /// Nothing is stored unless both are valid.
+    pub fn save(&mut self, id: Option<Uuid>, kind: ItemKind, meta: ItemMeta) -> Result<Uuid> {
+        kind.validate()?;
+        let meta = meta.normalized()?;
+        let open = self.open.as_mut().ok_or(Error::Locked)?;
+        let id = match id {
+            Some(id) => {
+                let item = open
+                    .contents
+                    .items
+                    .iter_mut()
+                    .find(|i| i.id == id)
+                    .ok_or(Error::ItemNotFound)?;
+                item.replace(kind)?;
+                item.set_meta(meta);
+                id
+            }
+            None => {
+                let mut item = Item::new(kind);
+                item.set_meta(meta);
+                let id = item.id;
+                open.contents.items.push(item);
+                id
+            }
+        };
+        self.persist()?;
+        Ok(id)
+    }
+
+    /// Folder, tags and favorite; the item's secrets are not touched.
+    pub fn set_meta(&mut self, id: Uuid, meta: ItemMeta) -> Result<()> {
+        let meta = meta.normalized()?;
+        let open = self.open.as_mut().ok_or(Error::Locked)?;
+        let item = open
+            .contents
+            .items
+            .iter_mut()
+            .find(|i| i.id == id)
+            .ok_or(Error::ItemNotFound)?;
+        item.set_meta(meta);
+        self.persist()
+    }
+
+    /// Folder names in use, sorted.
+    pub fn folders(&self) -> Result<Vec<String>> {
+        let open = self.open.as_ref().ok_or(Error::Locked)?;
+        let mut folders: Vec<String> = open
+            .contents
+            .items
+            .iter()
+            .filter(|i| !i.folder.is_empty())
+            .map(|i| i.folder.clone())
+            .collect();
+        folders.sort_by_key(|f| f.to_lowercase());
+        folders.dedup();
+        Ok(folders)
     }
 
     pub fn delete(&mut self, id: Uuid) -> Result<()> {
