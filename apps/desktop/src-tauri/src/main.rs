@@ -1,7 +1,7 @@
 // Janus desktop shell: thin commands over janus-core. DEVELOPMENT BUILD — not reviewed.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use janus_core::{FileStore, Item, ItemKind, ItemSummary, Vault};
+use janus_core::{FileStore, Item, ItemKind, ItemSummary, TotpCode, Vault};
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -77,6 +77,11 @@ fn save(state: State<AppVault>, id: Option<Uuid>, item: ItemKind) -> Reply<Uuid>
 }
 
 #[tauri::command]
+fn totp(state: State<AppVault>, id: Uuid) -> Reply<TotpCode> {
+    with(&state, |v| v.totp(id))
+}
+
+#[tauri::command]
 fn delete(state: State<AppVault>, id: Uuid) -> Reply<()> {
     with(&state, |v| v.delete(id))
 }
@@ -118,6 +123,7 @@ fn main() {
             get,
             save,
             delete,
+            totp,
             change_password,
             generate
         ])

@@ -15,6 +15,7 @@ fn login(title: &str, password: &str) -> ItemKind {
         password: password.into(),
         urls: vec!["https://example.org".into()],
         notes: String::new(),
+        totp: String::new(),
     })
 }
 
@@ -301,4 +302,34 @@ fn every_item_type_roundtrips_and_summaries_stay_non_secret() {
     }))
     .unwrap();
     v.add(wifi).unwrap();
+}
+
+#[test]
+fn login_authenticator_codes_and_validation() {
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let mut with_key = |key: &str| {
+        v.add(ItemKind::Login(Login {
+            title: "2FA".into(),
+            username: String::new(),
+            password: String::new(),
+            urls: vec![],
+            notes: String::new(),
+            totp: key.into(),
+        }))
+    };
+    assert!(matches!(with_key("not a key!"), Err(Error::Invalid(_))));
+    let id = with_key("GEZD GNBV GY3T QOJQ GEZD GNBV GY3T QOJQ").unwrap();
+    let code = v.totp(id).unwrap();
+    assert_eq!(code.code.len(), 6);
+    assert!(code.code.chars().all(|c| c.is_ascii_digit()));
+    assert!((1..=30).contains(&code.remaining));
+    let plain = v.add(login("No 2FA", "x")).unwrap();
+    assert!(matches!(v.totp(plain), Err(Error::Invalid(_))));
+    // Vaults written before the field existed still load.
+    let old: ItemKind = serde_json::from_value(serde_json::json!({
+        "type": "login", "title": "Old", "username": "", "password": "", "urls": [], "notes": ""
+    }))
+    .unwrap();
+    v.add(old).unwrap();
 }

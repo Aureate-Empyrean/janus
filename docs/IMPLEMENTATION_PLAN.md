@@ -28,7 +28,14 @@ Scope: development-only standalone vault on Windows. Not production-safe.
       contain secrets (cards show only the last four digits).
 - [x] Interface driven by one field schema per type; "New" from All items asks for a type.
 
-## Next candidates (V1 per architecture)
+## One-time codes (TOTP) — 2026-10-16
 
-TOTP; folders/tags/favorites; item
+- [x] Logins can hold an authenticator key (Base32 or `otpauth://totp/` link, SHA-1/256/512,
+      6–8 digits, custom period). Codes are generated locally per RFC 6238 and verified
+      against the RFC's test vectors. HOTP is rejected. Older vaults load unchanged.
+- [x] The detail view shows the live code with seconds remaining and Copy; the key stays
+      masked.
+
+## Next candidates (V1 per architecture)
+ folders/tags/favorites; item
 history; encrypted export; import from common formats. Then browser autofill.

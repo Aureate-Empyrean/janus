@@ -46,6 +46,7 @@ const mock = () => {
             vault.items.push({ id, created_at: now, updated_at: now, ...args.item }); return id;
           }
           case "delete": need(); vault.items = vault.items.filter((i) => i.id !== args.id); return null;
+          case "totp": need(); return { code: "287082", remaining: 17, period: 30 };
           case "generate": return { password: "Xq7#mK2!vR9@pL4$wT6^zH8&", bits: 147.3 };
           default: throw "unknown command " + cmd;
         }
@@ -85,12 +86,15 @@ const mock = () => {
     await page.fill('input[name="username"]', "adrian@example.org");
     await page.click("text=Generate");
     await page.fill('input[name="urls"]', "https://mail.example.org");
+    await page.fill('input[name="totp"]', "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
     await page.screenshot({ path: `${out}/janus-02-new-login.png` });
     await page.click("text=Add to vault");
     await expect(page.getByRole("heading", { name: "Example Mail" })).toBeVisible();
     await expect(page.locator(".kv")).not.toContainText("Xq7#mK2");
-    await page.click("text=Reveal");
+    await page.click('[aria-label="Reveal Password"]');
     await expect(page.locator(".kv")).toContainText("Xq7#mK2");
+    await expect(page.locator(".code")).toHaveText("287 082");
+    await expect(page.locator(".kv")).not.toContainText("GEZDGNBV");
     await page.screenshot({ path: `${out}/janus-03-detail.png` });
 
     await page.click(".nav-item >> text=Secure notes");
@@ -155,7 +159,7 @@ const mock = () => {
     const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim());
     if (accent !== "#4fb8b0") errors.push("Teal accent missing: " + accent);
     if (errors.length) throw Error(errors.join(" | "));
-    console.log("PASS: create (weak password refused), type chooser, login with generator, payment card (last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
+    console.log("PASS: create (weak password refused), type chooser, login with generator and live one-time code, payment card (last four only in list), identity document, masked/revealed password, secure note, filter/search, lock, wrong password, unlock, Roboto, teal accent, CSP without violations");
   } catch (e) {
     console.error("FAIL:", e.message, errors);
     await browser.contexts()[0]?.pages()[0]?.screenshot({ path: `${out}/janus-failure.png` }).catch(() => {});

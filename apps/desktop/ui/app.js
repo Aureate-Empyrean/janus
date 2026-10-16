@@ -200,6 +200,7 @@ const TYPES = {
       { name: "username", label: "Username", copy: true },
       { name: "password", label: "Password", secret: true, copy: true, generate: true },
       { name: "urls", label: "Website", copy: true, list: true, input: { type: "url", placeholder: "https://" } },
+      { name: "totp", label: "Authenticator key", secret: true, input: { placeholder: "Base32 key or otpauth:// link" } },
       NOTES,
     ],
   },
@@ -440,6 +441,7 @@ async function showItem(id) {
     if (field.list) for (const value of item[field.name] ?? []) row(field, value);
     else row(field, item[field.name]);
   }
+  if (item.type === "login" && item.totp) rows.splice(2, 0, codeRow(item.id));
   detail.replaceChildren(
     h(
       "div",
@@ -456,6 +458,34 @@ async function showItem(id) {
       h("p", { class: "meta-line", text: `${type.label} · updated ${new Date(item.updated_at).toLocaleString()}` }),
     ),
   );
+}
+
+// Live one-time code. The code is computed by the core; the timer stops when the
+// row leaves the page (another item, edit mode or lock).
+let codeTimer;
+function codeRow(id) {
+  clearInterval(codeTimer);
+  const code = h("span", { class: "v mono code", text: "······" });
+  const left = h("span", { class: "code-left" });
+  const copyButton = h("button", { class: "btn ghost small", type: "button", text: "Copy", "aria-label": "Copy one-time code" });
+  let current = "";
+  copyButton.addEventListener("click", () => current && copy(current, "One-time code"));
+  const tick = async () => {
+    if (!code.isConnected) return clearInterval(codeTimer);
+    try {
+      const next = await invoke("totp", { id });
+      current = next.code;
+      code.textContent = next.code.replace(/(\d{3})(?=\d)/, "$1 ");
+      left.textContent = `${next.remaining}s`;
+      left.classList.toggle("soon", next.remaining <= 5);
+    } catch (error) {
+      clearInterval(codeTimer);
+      code.textContent = String(error);
+    }
+  };
+  tick();
+  codeTimer = setInterval(tick, 1000);
+  return h("div", { class: "kv-row" }, h("span", { class: "k", text: "One-time code" }), h("span", { class: "code-cell" }, code, left), h("span", { class: "actions" }, copyButton));
 }
 
 function input(field, value) {

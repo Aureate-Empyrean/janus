@@ -7,6 +7,7 @@ mod crypto;
 mod generate;
 mod item;
 mod store;
+mod totp;
 
 pub use crypto::KdfParams;
 pub use generate::{generate_password, generated_entropy_bits};
@@ -15,6 +16,7 @@ pub use item::{
     WifiCredential,
 };
 pub use store::{FileStore, MemoryStore, VaultStore};
+pub use totp::{Algorithm as TotpAlgorithm, Totp, TotpCode};
 
 use crypto::{Envelope, VaultKey};
 use serde::{Deserialize, Serialize};
@@ -38,6 +40,8 @@ pub enum Error {
     WeakPassword,
     #[error("The vault file is not a Janus vault this version can read: {0}")]
     Format(String),
+    #[error("{0}")]
+    Invalid(String),
     #[error("Item not found")]
     ItemNotFound,
     #[error("Item kind cannot be changed")]
@@ -160,7 +164,18 @@ impl<S: VaultStore> Vault<S> {
             .ok_or(Error::ItemNotFound)
     }
 
+    /// Current one-time code of a Login's authenticator key.
+    pub fn totp(&self, id: Uuid) -> Result<TotpCode> {
+        match self.get(id)?.kind {
+            ItemKind::Login(ref login) if !login.totp.trim().is_empty() => {
+                Ok(Totp::parse(&login.totp)?.now())
+            }
+            _ => Err(Error::Invalid("This item has no authenticator key".into())),
+        }
+    }
+
     pub fn add(&mut self, kind: ItemKind) -> Result<Uuid> {
+        kind.validate()?;
         let open = self.open.as_mut().ok_or(Error::Locked)?;
         let item = Item::new(kind);
         let id = item.id;
@@ -170,6 +185,7 @@ impl<S: VaultStore> Vault<S> {
     }
 
     pub fn update(&mut self, id: Uuid, kind: ItemKind) -> Result<()> {
+        kind.validate()?;
         let open = self.open.as_mut().ok_or(Error::Locked)?;
         let item = open
             .contents
