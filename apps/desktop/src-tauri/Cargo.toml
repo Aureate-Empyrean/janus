@@ -14,3 +14,5 @@ janus-core = { path = "../../../crates/janus-core" }
 tauri = { version = "=2.12.1", features = [] }
 serde = { version = "1", features = ["derive"] }
 uuid = { version = "1", features = ["serde"] }
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+base64 = "0.23.1"

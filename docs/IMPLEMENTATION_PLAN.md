@@ -75,6 +75,22 @@ Scope: development-only standalone vault on Windows. Not production-safe.
 - [x] Imports never fail on a rule: a breaking value moves into the item's notes, with a
       warning in the preview.
 
+## Spotlight interface — 2026-10-16
+
+Owner asked for something more fluent and modern than sidebar + list, with a bolder Janus
+look, and may adopt it for other apps if it works out (that would need an architecture ADR).
+
+- [x] Search-first home: large search field (Ctrl+K or /), filter chips (types, favorites,
+      folders), favorite tiles and recently changed items. Arrow keys select, Enter opens,
+      Ctrl+Enter copies the main secret; Esc clears.
+- [x] Details, editing, export/import and master password open in a sheet that slides in
+      over the page; Esc closes and focus returns.
+- [x] Payment cards drawn as cards (brand from the number, number masked until revealed);
+      one-time codes with a countdown ring; Wi-Fi "join" QR code generated in Rust, shown
+      only on request.
+- [x] Type hues for recognition, layered surfaces, staggered entrances; everything still
+      uses the shared tokens and honours reduced motion. Hover never moves elements.
+
 ## Next candidates (V1 per architecture)
 
 KeePass and 1Password imports; browser autofill (early follow-up).

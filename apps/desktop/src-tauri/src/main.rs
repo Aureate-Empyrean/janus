@@ -147,6 +147,47 @@ fn check_item(mut item: ItemKind) -> Vec<FieldError> {
     item.check()
 }
 
+/// "Scan to join" QR code for a Wi-Fi item, as an SVG data URI for an <img>.
+/// It contains the network password, so the interface shows it only on request.
+#[tauri::command]
+fn wifi_qr(state: State<AppVault>, id: Uuid) -> Reply<String> {
+    use base64::Engine;
+    let item = with(&state, |v| v.get(id))?;
+    let ItemKind::Wifi(wifi) = &item.kind else {
+        return Err("Only Wi-Fi items have a join code".into());
+    };
+    // Wi-Fi network config URI (as read by Android and iOS cameras).
+    let escape = |v: &str| {
+        v.chars()
+            .flat_map(|c| match c {
+                '\\' | ';' | ',' | ':' | '"' => vec!['\\', c],
+                c => vec![c],
+            })
+            .collect::<String>()
+    };
+    let kind = match wifi.security.as_str() {
+        "WEP" => "WEP",
+        "open" => "nopass",
+        _ => "WPA",
+    };
+    let payload = format!(
+        "WIFI:T:{kind};S:{};P:{};;",
+        escape(&wifi.ssid),
+        escape(&wifi.password)
+    );
+    let svg = qrcode::QrCode::new(payload.as_bytes())
+        .map_err(|e| e.to_string())?
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(240, 240)
+        .dark_color(qrcode::render::svg::Color("#090a0c"))
+        .light_color(qrcode::render::svg::Color("#f2f0ea"))
+        .build();
+    Ok(format!(
+        "data:image/svg+xml;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(svg)
+    ))
+}
+
 #[tauri::command]
 fn delete(state: State<AppVault>, id: Uuid) -> Reply<()> {
     with(&state, |v| v.delete(id))
@@ -189,6 +230,7 @@ fn main() {
             get,
             save,
             delete,
+            wifi_qr,
             check_item,
             export_vault,
             preview_export,
