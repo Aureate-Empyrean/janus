@@ -135,6 +135,18 @@ textarea {
   background: var(--surface-1);
   transition: border-color var(--motion-fast);
 }
+.select {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  background: var(--surface-1);
+}
+.select:focus {
+  outline: none;
+  border-color: var(--accent-line);
+}
 .field textarea {
   height: auto;
   min-height: 96px;
@@ -436,6 +448,29 @@ textarea {
 }
 .confirm p {
   margin: 0 0 12px;
+}
+
+.type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+.type-card {
+  height: 64px;
+  padding: 0 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-2);
+  background: var(--obsidian);
+  text-align: left;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+.type-card:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-hover);
 }
 
 #toast {

@@ -10,7 +10,10 @@ mod store;
 
 pub use crypto::KdfParams;
 pub use generate::{generate_password, generated_entropy_bits};
-pub use item::{Item, ItemKind, ItemSummary, Login, SecureNote};
+pub use item::{
+    ApiSecret, Identity, Item, ItemKind, ItemSummary, Login, PaymentCard, SecureNote,
+    WifiCredential,
+};
 pub use store::{FileStore, MemoryStore, VaultStore};
 
 use crypto::{Envelope, VaultKey};

@@ -219,3 +219,86 @@ fn ipc_json_shapes_match_the_interface() {
         assert!(summary.get(key).is_some(), "summary missing {key}");
     }
 }
+
+#[test]
+fn every_item_type_roundtrips_and_summaries_stay_non_secret() {
+    use janus_core::{ApiSecret, Identity, PaymentCard, WifiCredential};
+    let mut v = vault(MemoryStore::default());
+    v.create(PASSWORD).unwrap();
+    let card = v
+        .add(ItemKind::PaymentCard(PaymentCard {
+            title: "Visa".into(),
+            cardholder: "A K".into(),
+            number: "4111 1111 1111 1234".into(),
+            expiry: "08/29".into(),
+            security_code: "987".into(),
+            pin: "4321".into(),
+            notes: String::new(),
+        }))
+        .unwrap();
+    v.add(ItemKind::Identity(Identity {
+        title: "Passport".into(),
+        document_type: "passport".into(),
+        full_name: "A K".into(),
+        document_number: "X1234567".into(),
+        issuing_authority: String::new(),
+        country: "SK".into(),
+        issued_on: String::new(),
+        expires_on: "2031-01-01".into(),
+        notes: String::new(),
+    }))
+    .unwrap();
+    v.add(ItemKind::Wifi(WifiCredential {
+        title: "Home".into(),
+        ssid: "Exodus".into(),
+        password: "wifi-secret-pass".into(),
+        security: "WPA3".into(),
+        notes: String::new(),
+    }))
+    .unwrap();
+    v.add(ItemKind::ApiSecret(ApiSecret {
+        title: "GitHub token".into(),
+        service: "GitHub".into(),
+        key_id: "ci".into(),
+        secret: "ghp_secretvalue".into(),
+        notes: String::new(),
+    }))
+    .unwrap();
+    v.lock();
+    v.unlock(PASSWORD).unwrap();
+    let summaries = v.list().unwrap();
+    let json = serde_json::to_string(&summaries).unwrap();
+    for secret in [
+        "4111 1111",
+        "987",
+        "4321",
+        "X1234567",
+        "wifi-secret-pass",
+        "ghp_secretvalue",
+    ] {
+        assert!(!json.contains(secret), "{secret} in overview");
+    }
+    let sub = |t: &str| {
+        summaries
+            .iter()
+            .find(|s| s.title == t)
+            .unwrap()
+            .subtitle
+            .clone()
+    };
+    assert_eq!(sub("Visa"), "•••• 1234");
+    assert_eq!(sub("Passport"), "Passport");
+    assert_eq!(sub("Home"), "Exodus");
+    assert_eq!(sub("GitHub token"), "GitHub");
+    match v.get(card).unwrap().kind {
+        ItemKind::PaymentCard(c) => {
+            assert_eq!((c.security_code.as_str(), c.pin.as_str()), ("987", "4321"))
+        }
+        _ => panic!("wrong kind"),
+    }
+    let wifi: ItemKind = serde_json::from_value(serde_json::json!({
+        "type": "wifi", "title": "T", "ssid": "S", "password": "p", "security": "WPA2", "notes": ""
+    }))
+    .unwrap();
+    v.add(wifi).unwrap();
+}

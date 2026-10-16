@@ -177,7 +177,84 @@ function unlockScreen() {
 
 /* ───────── Vault ───────── */
 
-const KINDS = { login: "Logins", secure_note: "Secure notes" };
+// Field schema per item type. `secret` values are masked until revealed; `copy` adds Copy.
+const DOCUMENT_TYPES = [
+  ["passport", "Passport"],
+  ["national_id", "National ID"],
+  ["driving_licence", "Driving licence"],
+  ["other", "Other document"],
+];
+const WIFI_SECURITY = [
+  ["WPA3", "WPA3"],
+  ["WPA2", "WPA2"],
+  ["WEP", "WEP"],
+  ["open", "Open"],
+  ["other", "Other"],
+];
+const NOTES = { name: "notes", label: "Notes", multiline: true };
+const TYPES = {
+  login: {
+    label: "Login",
+    plural: "Logins",
+    fields: [
+      { name: "username", label: "Username", copy: true },
+      { name: "password", label: "Password", secret: true, copy: true, generate: true },
+      { name: "urls", label: "Website", copy: true, list: true, input: { type: "url", placeholder: "https://" } },
+      NOTES,
+    ],
+  },
+  payment_card: {
+    label: "Payment card",
+    plural: "Payment cards",
+    fields: [
+      { name: "cardholder", label: "Cardholder", copy: true },
+      { name: "number", label: "Card number", secret: true, copy: true, input: { inputmode: "numeric" } },
+      { name: "expiry", label: "Expires", copy: true, input: { placeholder: "MM/YY" } },
+      { name: "security_code", label: "Security code", secret: true, copy: true, input: { inputmode: "numeric" } },
+      { name: "pin", label: "PIN", secret: true, copy: true, input: { inputmode: "numeric" } },
+      NOTES,
+    ],
+  },
+  identity: {
+    label: "Identity document",
+    plural: "Identity documents",
+    fields: [
+      { name: "document_type", label: "Document", options: DOCUMENT_TYPES },
+      { name: "full_name", label: "Full name", copy: true },
+      { name: "document_number", label: "Number", secret: true, copy: true },
+      { name: "issuing_authority", label: "Issued by" },
+      { name: "country", label: "Country" },
+      { name: "issued_on", label: "Issued", input: { type: "date" } },
+      { name: "expires_on", label: "Expires", input: { type: "date" } },
+      NOTES,
+    ],
+  },
+  wifi: {
+    label: "Wi-Fi",
+    plural: "Wi-Fi",
+    fields: [
+      { name: "ssid", label: "Network name", copy: true },
+      { name: "password", label: "Password", secret: true, copy: true, generate: true },
+      { name: "security", label: "Security", options: WIFI_SECURITY },
+      NOTES,
+    ],
+  },
+  api_secret: {
+    label: "API secret",
+    plural: "API secrets",
+    fields: [
+      { name: "service", label: "Service" },
+      { name: "key_id", label: "Key or client ID", copy: true },
+      { name: "secret", label: "Secret", secret: true, copy: true },
+      NOTES,
+    ],
+  },
+  secure_note: {
+    label: "Secure note",
+    plural: "Secure notes",
+    fields: [{ name: "content", label: "Note", multiline: true, secret: true, copy: true }],
+  },
+};
 
 async function refresh() {
   state.items = await call("list");
@@ -205,7 +282,7 @@ function itemRows() {
         "span",
         {},
         h("span", { class: "title", text: i.title || "Untitled" }),
-        h("span", { class: "sub", text: i.subtitle || (i.type === "login" ? "Login" : "Secure note") }),
+        h("span", { class: "sub", text: i.subtitle || TYPES[i.type]?.label || "" }),
       ),
     ),
   );
@@ -247,8 +324,6 @@ function render() {
       renderList();
     },
   });
-  const rows = itemRows();
-
   const detail = h("section", { class: "detail", id: "detail" });
   $app.replaceChildren(
     h(
@@ -259,8 +334,7 @@ function render() {
         { class: "sidebar", "aria-label": "Janus" },
         h("div", { class: "brand" }, mark(""), h("b", { text: "JANUS" })),
         nav("all", "All items"),
-        nav("login", KINDS.login),
-        nav("secure_note", KINDS.secure_note),
+        Object.entries(TYPES).map(([key, type]) => nav(key, type.plural)),
         h("div", { class: "spacer" }),
         h("button", { class: "nav-item", type: "button", onclick: passwordChange }, h("span", { class: "label", text: "Master password" })),
         h("button", { class: "nav-item", type: "button", onclick: () => lockNow() }, h("span", { class: "label", text: "Lock" })),
@@ -272,9 +346,14 @@ function render() {
           "div",
           { class: "list-head" },
           search,
-          h("button", { class: "btn primary", type: "button", onclick: () => edit(null, state.filter === "secure_note" ? "secure_note" : "login"), text: "New" }),
+          h("button", {
+            class: "btn primary",
+            type: "button",
+            text: "New",
+            onclick: () => (TYPES[state.filter] ? edit(null, state.filter) : chooseType()),
+          }),
         ),
-        h("div", { class: "items", role: "list" }, rows),
+        h("div", { class: "items", role: "list" }, itemRows()),
       ),
       detail,
     ),
@@ -282,6 +361,26 @@ function render() {
   if (state.mode === "edit") return;
   if (state.selected) showItem(state.selected);
   else detail.append(h("p", { class: "empty", text: "Select an item, or create one with New." }));
+}
+
+function chooseType() {
+  state.mode = "edit";
+  render();
+  document.getElementById("detail").replaceChildren(
+    h(
+      "div",
+      { class: "detail-inner" },
+      h("header", { class: "detail-head" }, h("h2", { text: "What do you want to add?" })),
+      h(
+        "div",
+        { class: "type-grid" },
+        Object.entries(TYPES).map(([key, type]) =>
+          h("button", { class: "type-card", type: "button", text: type.label, onclick: () => edit(null, key) }),
+        ),
+      ),
+    ),
+  );
+  document.querySelector(".type-card")?.focus();
 }
 
 function glyphFor(item) {
@@ -294,40 +393,52 @@ async function select(id) {
   render();
 }
 
+function optionLabel(field, value) {
+  return field.options?.find(([key]) => key === value)?.[1] ?? value;
+}
+
 async function showItem(id) {
   const item = await call("get", { id });
   const detail = document.getElementById("detail");
   if (!detail || state.selected !== id) return;
+  const type = TYPES[item.type];
   const rows = [];
-  const row = (label, value, { secret = false, copyable = false } = {}) => {
+  const row = (field, value) => {
     if (!value) return;
-    const v = h("span", { class: "v" + (secret ? " mono" : ""), text: secret ? "••••••••••••" : value });
+    const shown = optionLabel(field, value);
+    const v = h("span", { class: "v" + (field.secret ? " mono" : ""), text: field.secret ? "••••••••••••" : shown });
     const actions = h("span", { class: "actions" });
-    if (secret) {
-      let shown = false;
+    if (field.secret) {
+      let visible = false;
       actions.append(
         h("button", {
           class: "btn ghost small",
           type: "button",
           text: "Reveal",
+          "aria-label": `Reveal ${field.label}`,
           onclick: (event) => {
-            shown = !shown;
-            v.textContent = shown ? value : "••••••••••••";
-            event.target.textContent = shown ? "Hide" : "Reveal";
+            visible = !visible;
+            v.textContent = visible ? value : "••••••••••••";
+            event.target.textContent = visible ? "Hide" : "Reveal";
           },
         }),
       );
     }
-    if (copyable) actions.append(h("button", { class: "btn ghost small", type: "button", text: "Copy", onclick: () => copy(value, label) }));
-    rows.push(h("div", { class: "kv-row" }, h("span", { class: "k", text: label }), v, actions));
+    if (field.copy)
+      actions.append(
+        h("button", {
+          class: "btn ghost small",
+          type: "button",
+          text: "Copy",
+          "aria-label": `Copy ${field.label}`,
+          onclick: () => copy(value, field.label),
+        }),
+      );
+    rows.push(h("div", { class: "kv-row" }, h("span", { class: "k", text: field.label }), v, actions));
   };
-  if (item.type === "login") {
-    row("Username", item.username, { copyable: true });
-    row("Password", item.password, { secret: true, copyable: true });
-    for (const url of item.urls) row("Website", url, { copyable: true });
-    row("Notes", item.notes);
-  } else {
-    row("Note", item.content, { secret: true, copyable: true });
+  for (const field of type.fields) {
+    if (field.list) for (const value of item[field.name] ?? []) row(field, value);
+    else row(field, item[field.name]);
   }
   detail.replaceChildren(
     h(
@@ -342,64 +453,77 @@ async function showItem(id) {
         h("button", { class: "btn ghost danger", type: "button", text: "Delete", onclick: () => remove(item) }),
       ),
       rows.length ? h("div", { class: "kv" }, rows) : h("p", { class: "empty", text: "No details yet." }),
-      h("p", {
-        class: "meta-line",
-        text: `${item.type === "login" ? "Login" : "Secure note"} · updated ${new Date(item.updated_at).toLocaleString()}`,
-      }),
+      h("p", { class: "meta-line", text: `${type.label} · updated ${new Date(item.updated_at).toLocaleString()}` }),
     ),
   );
 }
 
-function edit(item, type = item?.type) {
+function input(field, value) {
+  const common = { name: field.name, autocomplete: "off", spellcheck: "false" };
+  if (field.multiline) return h("textarea", common, value);
+  if (field.options)
+    return h(
+      "select",
+      { ...common, class: "select" },
+      field.options.map(([key, label]) => h("option", { value: key, selected: key === value, text: label })),
+    );
+  return h("input", {
+    ...common,
+    value,
+    ...(field.secret ? { type: "password", class: "mono" } : {}),
+    ...field.input,
+  });
+}
+
+function edit(item, typeKey = item?.type) {
   state.mode = "edit";
   render();
+  const type = TYPES[typeKey];
   const detail = document.getElementById("detail");
   const error = h("p", { class: "error", role: "alert" });
-  const field = (label, name, value = "", attrs = {}) =>
-    h("label", { class: "field" }, h("span", { text: label }), h(attrs.multiline ? "textarea" : "input", { name, value: attrs.multiline ? undefined : value, autocomplete: "off", spellcheck: "false", ...attrs.input }, attrs.multiline ? value : null));
-  const fields = [field("Title", "title", item?.title)];
-  let genInfo;
-  if (type === "login") {
-    const password = h("input", { name: "password", type: "password", value: item?.password ?? "", autocomplete: "off", class: "mono" });
-    genInfo = h("p", { class: "gen-info" });
+  const fields = [h("label", { class: "field" }, h("span", { text: "Title" }), input({ name: "title" }, item?.title ?? ""))];
+  for (const field of type.fields) {
+    const value = field.list ? (item?.[field.name]?.[0] ?? "") : (item?.[field.name] ?? "");
+    const control = input(field, value);
+    const extras = [];
+    let info = null;
+    if (field.secret && !field.multiline)
+      extras.push(
+        h("button", {
+          class: "btn small",
+          type: "button",
+          text: "Show",
+          onclick: (event) => {
+            control.type = control.type === "password" ? "text" : "password";
+            event.target.textContent = control.type === "password" ? "Show" : "Hide";
+          },
+        }),
+      );
+    if (field.generate) {
+      info = h("p", { class: "gen-info" });
+      extras.push(
+        h("button", {
+          class: "btn small",
+          type: "button",
+          text: "Generate",
+          onclick: async () => {
+            const generated = await call("generate", { length: 24, symbols: true });
+            control.value = generated.password;
+            control.type = "text";
+            info.textContent = `Generated: 24 characters, about ${Math.round(generated.bits)} bits of entropy.`;
+          },
+        }),
+      );
+    }
     fields.push(
-      field("Username", "username", item?.username),
       h(
         "label",
         { class: "field" },
-        h("span", { text: "Password" }),
-        h(
-          "span",
-          { class: "input-row" },
-          password,
-          h("button", {
-            class: "btn small",
-            type: "button",
-            text: "Show",
-            onclick: (event) => {
-              password.type = password.type === "password" ? "text" : "password";
-              event.target.textContent = password.type === "password" ? "Show" : "Hide";
-            },
-          }),
-          h("button", {
-            class: "btn small",
-            type: "button",
-            text: "Generate",
-            onclick: async () => {
-              const generated = await call("generate", { length: 24, symbols: true });
-              password.value = generated.password;
-              password.type = "text";
-              genInfo.textContent = `Generated: 24 characters, about ${Math.round(generated.bits)} bits of entropy.`;
-            },
-          }),
-        ),
+        h("span", { text: field.label }),
+        extras.length ? h("span", { class: "input-row" }, control, extras) : control,
       ),
-      genInfo,
-      field("Website", "url", item?.urls?.[0] ?? "", { input: { type: "url", placeholder: "https://" } }),
-      field("Notes", "notes", item?.notes ?? "", { multiline: true }),
+      info,
     );
-  } else {
-    fields.push(field("Note", "content", item?.content ?? "", { multiline: true }));
   }
   const form = h(
     "form",
@@ -407,18 +531,11 @@ function edit(item, type = item?.type) {
       onsubmit: async (event) => {
         event.preventDefault();
         const data = new FormData(form);
-        const value = (name) => String(data.get(name) ?? "");
-        const payload =
-          type === "login"
-            ? {
-                type: "login",
-                title: value("title"),
-                username: value("username"),
-                password: value("password"),
-                urls: value("url") ? [value("url")] : [],
-                notes: value("notes"),
-              }
-            : { type: "secure_note", title: value("title"), content: value("content") };
+        const payload = { type: typeKey, title: String(data.get("title") ?? "") };
+        for (const field of type.fields) {
+          const value = String(data.get(field.name) ?? "");
+          payload[field.name] = field.list ? (value ? [value] : []) : value;
+        }
         const id = await call("save", { id: item?.id ?? null, item: payload }, error);
         state.selected = id;
         state.mode = "view";
@@ -446,7 +563,7 @@ function edit(item, type = item?.type) {
     h(
       "div",
       { class: "detail-inner" },
-      h("header", { class: "detail-head" }, h("h2", { text: item ? "Edit item" : type === "login" ? "New login" : "New secure note" })),
+      h("header", { class: "detail-head" }, h("h2", { text: item ? `Edit ${type.label.toLowerCase()}` : `New ${type.label.toLowerCase()}` })),
       form,
     ),
   );
